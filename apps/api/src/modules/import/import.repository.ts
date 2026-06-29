@@ -137,7 +137,13 @@ export class ImportRepository extends BaseRepository {
     },
     client?: PoolClient,
   ): Promise<{ id: string; slug: string }> {
-    const executor = client ?? this;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.query<R>(text, values);
     const sql = `
       INSERT INTO brands (name, slug, manufacturer, country_code, website_url, description, logo_image_url, is_active)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -152,7 +158,7 @@ export class ImportRepository extends BaseRepository {
         updated_at = now()
       RETURNING id, slug
     `;
-    const result = await executor.query<{ id: string; slug: string }>(sql, [
+    const result = await run<{ id: string; slug: string }>(sql, [
       data.name,
       data.slug,
       data.manufacturer ?? null,
@@ -181,7 +187,13 @@ export class ImportRepository extends BaseRepository {
     },
     client?: PoolClient,
   ): Promise<{ id: string; slug: string }> {
-    const executor = client ?? this;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.query<R>(text, values);
     const sql = `
       INSERT INTO products (brand_id, name, slug, description, upc, sku, package_size_grams, package_size_label, food_form_id, primary_protein_source_id, is_active)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
@@ -197,7 +209,7 @@ export class ImportRepository extends BaseRepository {
         updated_at = now()
       RETURNING id, slug
     `;
-    const result = await executor.query<{ id: string; slug: string }>(sql, [
+    const result = await run<{ id: string; slug: string }>(sql, [
       data.brandId,
       data.name,
       data.slug,
@@ -228,7 +240,13 @@ export class ImportRepository extends BaseRepository {
     },
     client?: PoolClient,
   ): Promise<{ id: string; slug: string }> {
-    const executor = client ?? this;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.query<R>(text, values);
     const sql = `
       INSERT INTO ingredients (name, slug, inci_name, category_id, canonical_name, description, is_animal_derived, is_common_allergen, is_controversial, is_active)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -245,7 +263,7 @@ export class ImportRepository extends BaseRepository {
         updated_at = now()
       RETURNING id, slug
     `;
-    const result = await executor.query<{ id: string; slug: string }>(sql, [
+    const result = await run<{ id: string; slug: string }>(sql, [
       data.name,
       data.slug,
       data.inciName ?? null,
@@ -275,13 +293,19 @@ export class ImportRepository extends BaseRepository {
     },
     client?: PoolClient,
   ): Promise<void> {
-    const executor = client ?? this;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.query<R>(text, values);
     const sql = `
       INSERT INTO product_ingredients (product_id, ingredient_id, position, raw_label, is_primary, percentage_value)
       VALUES ($1, $2, $3, $4, $5, $6)
       ON CONFLICT (product_id, ingredient_id) WHERE deleted_at IS NULL DO NOTHING
     `;
-    await executor.query(sql, [
+    await run(sql, [
       data.productId,
       data.ingredientId,
       data.position,
@@ -301,13 +325,19 @@ export class ImportRepository extends BaseRepository {
     },
     client?: PoolClient,
   ): Promise<void> {
-    const executor = client ?? this;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.query<R>(text, values);
     const sql = `
       INSERT INTO product_targeting (product_id, pet_type_id, life_stage_id, breed_size_id, category_id)
       VALUES ($1, $2, $3, $4, $5)
       ON CONFLICT (product_id, pet_type_id, life_stage_id, breed_size_id, category_id) DO NOTHING
     `;
-    await executor.query(sql, [
+    await run(sql, [
       data.productId,
       data.petTypeId,
       data.lifeStageId ?? null,
@@ -321,13 +351,19 @@ export class ImportRepository extends BaseRepository {
     claimId: string,
     client?: PoolClient,
   ): Promise<void> {
-    const executor = client ?? this;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.query<R>(text, values);
     const sql = `
       INSERT INTO product_claims (product_id, claim_id)
       VALUES ($1, $2)
       ON CONFLICT (product_id, claim_id) DO NOTHING
     `;
-    await executor.query(sql, [productId, claimId]);
+    await run(sql, [productId, claimId]);
   }
 
   async insertProductTag(
@@ -335,13 +371,19 @@ export class ImportRepository extends BaseRepository {
     tagId: string,
     client?: PoolClient,
   ): Promise<void> {
-    const executor = client ?? this;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.query<R>(text, values);
     const sql = `
       INSERT INTO product_tags (product_id, tag_id)
       VALUES ($1, $2)
       ON CONFLICT (product_id, tag_id) DO NOTHING
     `;
-    await executor.query(sql, [productId, tagId]);
+    await run(sql, [productId, tagId]);
   }
 
   async insertNutritionProfile(
@@ -353,13 +395,19 @@ export class ImportRepository extends BaseRepository {
     },
     client?: PoolClient,
   ): Promise<{ id: string }> {
-    const executor = client ?? this;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.query<R>(text, values);
     const sql = `
       INSERT INTO nutrition_profiles (product_id, kcal_per_100g, moisture_pct, effective_from, source)
       VALUES ($1, $2, $3, CURRENT_DATE, $4)
       RETURNING id
     `;
-    const result = await executor.query<{ id: string }>(sql, [
+    const result = await run<{ id: string }>(sql, [
       data.productId,
       data.kcalPer100g ?? null,
       data.moisturePct ?? null,
@@ -379,13 +427,19 @@ export class ImportRepository extends BaseRepository {
     },
     client?: PoolClient,
   ): Promise<void> {
-    const executor = client ?? this;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.query<R>(text, values);
     const sql = `
       INSERT INTO product_nutrients (product_id, nutrient_id, nutrition_profile_id, amount, unit, bound)
       VALUES ($1, $2, $3, $4, $5, $6)
       ON CONFLICT DO NOTHING
     `;
-    await executor.query(sql, [
+    await run(sql, [
       data.productId,
       data.nutrientId,
       data.nutritionProfileId ?? null,
@@ -405,12 +459,18 @@ export class ImportRepository extends BaseRepository {
     },
     client?: PoolClient,
   ): Promise<void> {
-    const executor = client ?? this;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.query<R>(text, values);
     const sql = `
       INSERT INTO product_images (product_id, public_url, storage_path, alt_text, is_primary)
       VALUES ($1, $2, $3, $4, $5)
     `;
-    await executor.query(sql, [
+    await run(sql, [
       data.productId,
       data.publicUrl,
       data.storagePath,

@@ -33,10 +33,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Documentation:**
   - `docs/API_ROADMAP.md` — comprehensive catalogue of every endpoint Tuskrank will eventually expose, grouped by module (auth, brands, products, ingredients, search, scoring, AI, recommendations, admin, SEO, analytics, audit, health). Each entry lists method, URL, purpose, auth requirement, request/response shapes, and status codes.
   - `docs/DECISIONS.md` — Architecture Decision Records (ADRs) capturing every irreversible / defensible design choice from Sprint 0 → Sprint 2A.1.
+  - `docs/MVP_AUDIT.md` — Complete project audit with subsystem status, bugs, tech debt, and risk levels.
+  - `docs/PRODUCTION_CHECKLIST.md` — Pre-launch checklist with pass/fail status for every production readiness item.
+  - `docs/ROADMAP_V2.md` — Prioritized roadmap (P0/P1/P2/P3) with effort estimates and timeline.
+
+- **Security Hardening:**
+  - `SupabaseAuthGuard` now requires explicit `AUTH_BYPASS_ENABLED=true` env var to bypass auth in development (previously relied solely on `NODE_ENV`).
+  - `RolesGuard` registered as global `APP_GUARD` (previously required explicit `@UseGuards(RolesGuard)` on each controller).
+  - Scoring endpoints `score` and `bulk` now require `admin` role (previously `@Public()`).
+  - Express request timeout configured (30s request, 10s headers).
+
+- **Search Optimization:**
+  - Product search queries now use generated `search_vector` columns instead of inline `to_tsvector`.
+  - Added GIN trigram index on `brands.name` for fuzzy brand search.
+  - Added GIN trigram index on `search_keywords.normalized` for fuzzy keyword search.
+
+- **Scoring Hardening:**
+  - Persistence failures now surface warnings in the response (previously silently swallowed).
+  - Duplicate brand certification query removed from `getProductScoringInput()`.
+  - Malformed URLs in scientific references handled gracefully (try/catch around `new URL()`).
+
+- **Deployment:**
+  - `.dockerignore` file created to exclude unnecessary files from Docker build context.
+  - `.github/workflows/deploy.yml` — API deployment pipeline (build → push → deploy → smoke test).
+  - Dockerfile: `--frozen-lockfile` enforced (previously `--frozen-lockfile=false`).
+  - Dockerfile: `APP_PORT=4000` set for healthcheck (previously unset).
 
 ### In Progress
 
-- _Nothing yet. Sprint 2G is complete._
+- MVP audit and production hardening (P0 Phase 1).
+
+### Fixed
+
+- **TypeScript Compilation (245 → 0 production errors):**
+  - Fixed `import type` → `import` for `LogLevel`/`LogFormat` enums used as values in logger config.
+  - Fixed `PostgresHealthIndicator` throwing `new Error(result)` with object instead of string.
+  - Refactored `HealthController.postgresCheck()` to delegate to injected `PostgresHealthIndicator` (was calling non-existent `this.getStatus`).
+  - Fixed readonly array push in `ImportService.getReport()` — changed `ImportReport['errors']` to mutable `ImportReportError[]`.
+  - Fixed readonly assignment in `ImportService.parse()` — spread `readonly RawImportRow[]` into mutable copy.
+  - Fixed `normalizeNumeric` type mismatch in `row.mapper.ts` — guarded against `boolean` values from `RawImportRow`.
+  - Fixed `normalizeList` `never` type — widened parameter type to accept `string | string[]`.
+  - Fixed branded value object casts (`ProductSlug`, `Upc`, `Sku`) — changed `as X` to `as unknown as X`.
+  - Fixed `executor.query()` TS2349 errors across all repositories — replaced `client ?? this` union with local `run` dispatch helper.
+  - Fixed `Record<string, unknown>` constraint errors — changed to `Record<string, any>` in repository helpers.
+  - Fixed `ProductListFilters` readonly mutation in `products.service.ts` — built object declaratively.
+  - Fixed `ProductEntity` → `Product` assignment in `products.repository.ts` — added type casts at mapper return sites.
+  - Fixed `req.user` assignment in `SupabaseAuthGuard` — cast to `any` for Supabase middleware augmentation.
+  - Fixed `AdminListProductsSchema` Zod `.extend()` on `ZodEffects` — rebuilt using `.shape` merge.
+  - Added barrel `index.ts` files for `search`, `ingredients`, and `scoring` modules.
+  - Added bare path alias entries in `tsconfig.json` (`@database`, `@common`, etc.) alongside wildcard entries.
+  - Fixed relative import paths in `brands.repository.ts` and `ingredients.repository.ts` (`../domain/` → `./domain/`).
 
 ---
 

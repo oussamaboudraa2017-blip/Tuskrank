@@ -39,10 +39,10 @@ export function asProductSlug(value: string): ProductSlug {
       `Invalid ProductSlug: "${value}" — must match ${PRODUCT_SLUG_RE} and be ${PRODUCT_BOUNDS.slugMinLength}-${PRODUCT_BOUNDS.slugMaxLength} chars.`,
     );
   }
-  return value as ProductSlug;
+  return value as unknown as ProductSlug;
 }
 
-export function isProductSlug(value: string): value is ProductSlug {
+export function isProductSlug(value: string): boolean {
   return (
     value.length >= PRODUCT_BOUNDS.slugMinLength &&
     value.length <= PRODUCT_BOUNDS.slugMaxLength &&
@@ -73,10 +73,10 @@ export function asUpc(value: string): Upc {
       `Invalid UPC length ${value.length}; allowed: ${PRODUCT_BOUNDS.upcAllowedLengths.join(', ')}.`,
     );
   }
-  return value as Upc;
+  return value as unknown as Upc;
 }
 
-export function isUpc(value: string): value is Upc {
+export function isUpc(value: string): boolean {
   return PRODUCT_UPC_RE.test(value) && PRODUCT_BOUNDS.upcAllowedLengths.includes(value.length as 8 | 12 | 13 | 14);
 }
 
@@ -93,7 +93,7 @@ export function asSku(value: string): Sku {
   if (value.length === 0 || value.length > 64) {
     throw new TypeError(`Invalid Sku: length must be 1-64, got ${value.length}.`);
   }
-  return value as Sku;
+  return value as unknown as Sku;
 }
 
 /* ==================================================================

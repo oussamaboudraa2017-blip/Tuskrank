@@ -30,14 +30,22 @@
     "esModuleInterop": true,
     "experimentalDecorators": true,
     "paths": {
+      "@common": ["src/common"],
       "@common/*": ["src/common/*"],
+      "@config": ["src/config"],
       "@config/*": ["src/config/*"],
+      "@database": ["src/database"],
       "@database/*": ["src/database/*"],
       "@modules/*": ["src/modules/*"],
+      "@auth": ["src/modules/auth"],
       "@auth/*": ["src/modules/auth/*"],
+      "@health": ["src/modules/health"],
       "@health/*": ["src/modules/health/*"],
+      "@shared": ["src/shared"],
       "@shared/*": ["src/shared/*"],
+      "@utils": ["src/utils"],
       "@utils/*": ["src/utils/*"],
+      "@types": ["src/types"],
       "@types/*": ["src/types/*"]
     }
   },

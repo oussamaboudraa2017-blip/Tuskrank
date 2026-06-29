@@ -425,7 +425,7 @@ function makePackageSizeOrNull(
   if (grams === null) {
     if (label !== null) {
       throw new ProductInvalidPackageSizeError(
-        'unset',
+        'unset' as Uuid,
         NaN,
         'label is set without grams',
       );
@@ -436,7 +436,7 @@ function makePackageSizeOrNull(
     return makePackageSize(grams, label);
   } catch (err) {
     throw new ProductInvalidPackageSizeError(
-      'unset',
+      'unset' as Uuid,
       grams,
       (err as Error).message,
     );

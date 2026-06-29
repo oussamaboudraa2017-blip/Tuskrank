@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ScoringRepository } from './repositories/scoring.repository';
 import { ScoringEngine } from './engine/scoring.engine';
-import { ScoringConfig, ScoringResult, ProductScoringInput, CategoryScore } from './types';
+import { ScoringConfig, ScoringResult, ProductScoringInput, CategoryScore, ScoringWarning } from './types';
 import { ScoringCategory } from './enums';
 import { SCORING_BOUNDS } from './constants';
 import {
@@ -205,7 +205,12 @@ export class ScoringService {
       });
     } catch (err) {
       this.logger.error(`Failed to persist score for ${input.productId}: ${err}`);
-      // Still return the computed score even if persistence fails
+      (result.warnings as ScoringWarning[]).push({
+        category: ScoringCategory.IngredientQuality,
+        severity: 'high' as any,
+        code: 'PERSISTENCE_FAILED',
+        message: `Score computed but failed to persist: ${err instanceof Error ? err.message : 'Unknown error'}`,
+      });
     }
 
     return result;

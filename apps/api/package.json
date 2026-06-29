@@ -30,7 +30,7 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register --trace-warnings node_modules/.bin/jest --runInBand",
     "typecheck": "tsc --noEmit",
     "prebuild": "rimraf dist",
-    "prepare": "husky install || true"
+    "prepare": "node -e \"try{require('child_process').execSync('husky install',{stdio:'inherit'})}catch(e){}\""
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",

@@ -2,10 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { PoolClient } from 'pg';
 import { BaseRepository } from '@database';
 import type { Uuid } from '@types';
-import type { IngredientRow, IngredientCategoryRow, IngredientScoreRow, ProductIngredientRow, IngredientReferenceRow } from '../domain/mapping/ingredient.db-model';
-import type { IngredientQuery, IngredientSearchInput } from '../domain/interfaces';
-import { IngredientSortField, SortOrder } from '../domain/enums';
-import { INGREDIENT_BOUNDS } from '../domain/constants';
+import type { IngredientRow, IngredientCategoryRow, IngredientScoreRow, ProductIngredientRow, IngredientReferenceRow } from './domain/mapping/ingredient.db-model';
+import type { IngredientQuery, IngredientSearchInput } from './domain/interfaces';
+import { IngredientSortField, SortOrder } from './domain/enums';
+import { INGREDIENT_BOUNDS } from './domain/constants';
 
 /**
  * Ingredients repository — queries against PostgreSQL.
@@ -432,7 +432,13 @@ export class IngredientsRepository extends BaseRepository {
     },
     client?: PoolClient,
   ): Promise<IngredientRow> {
-    const executor = client ?? this;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.query<R>(text, values);
     const sql = `
       INSERT INTO ingredients (
         name, slug, inci_name, category_id, canonical_name, description,
@@ -440,7 +446,7 @@ export class IngredientsRepository extends BaseRepository {
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING *
     `;
-    const result = await executor.query<IngredientRow>(sql, [
+    const result = await run<IngredientRow>(sql, [
       data.name,
       data.slug ?? null,
       data.inciName ?? null,
@@ -471,7 +477,13 @@ export class IngredientsRepository extends BaseRepository {
     },
     client?: PoolClient,
   ): Promise<IngredientRow> {
-    const executor = client ?? this;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.query<R>(text, values);
     const setClauses: string[] = [];
     const values: unknown[] = [];
     let idx = 1;
@@ -497,20 +509,32 @@ export class IngredientsRepository extends BaseRepository {
       WHERE id = $${idx} AND deleted_at IS NULL
       RETURNING *
     `;
-    const result = await executor.query<IngredientRow>(sql, values);
+    const result = await run<IngredientRow>(sql, values);
     return result.rows[0];
   }
 
   async softDelete(id: Uuid, client?: PoolClient): Promise<void> {
-    const executor = client ?? this;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.query<R>(text, values);
     const sql = `UPDATE ingredients SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL`;
-    await executor.query(sql, [id]);
+    await run(sql, [id]);
   }
 
   async restore(id: Uuid, client?: PoolClient): Promise<void> {
-    const executor = client ?? this;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.query<R>(text, values);
     const sql = `UPDATE ingredients SET deleted_at = NULL WHERE id = $1 AND deleted_at IS NOT NULL`;
-    await executor.query(sql, [id]);
+    await run(sql, [id]);
   }
 
   /* ------------------------------------------------------------------
@@ -528,13 +552,19 @@ export class IngredientsRepository extends BaseRepository {
     },
     client?: PoolClient,
   ): Promise<IngredientCategoryRow> {
-    const executor = client ?? this;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.query<R>(text, values);
     const sql = `
       INSERT INTO ingredient_categories (name, slug, description, parent_id, sort_order, is_active)
       VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *
     `;
-    const result = await executor.query<IngredientCategoryRow>(sql, [
+    const result = await run<IngredientCategoryRow>(sql, [
       data.name,
       data.slug ?? null,
       data.description ?? null,
@@ -557,7 +587,13 @@ export class IngredientsRepository extends BaseRepository {
     },
     client?: PoolClient,
   ): Promise<IngredientCategoryRow> {
-    const executor = client ?? this;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.query<R>(text, values);
     const setClauses: string[] = [];
     const values: unknown[] = [];
     let idx = 1;
@@ -579,14 +615,20 @@ export class IngredientsRepository extends BaseRepository {
       WHERE id = $${idx} AND deleted_at IS NULL
       RETURNING *
     `;
-    const result = await executor.query<IngredientCategoryRow>(sql, values);
+    const result = await run<IngredientCategoryRow>(sql, values);
     return result.rows[0];
   }
 
   async softDeleteCategory(id: Uuid, client?: PoolClient): Promise<void> {
-    const executor = client ?? this;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.query<R>(text, values);
     const sql = `UPDATE ingredient_categories SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL`;
-    await executor.query(sql, [id]);
+    await run(sql, [id]);
   }
 
   /* ------------------------------------------------------------------
@@ -603,10 +645,16 @@ export class IngredientsRepository extends BaseRepository {
     },
     client?: PoolClient,
   ): Promise<IngredientScoreRow> {
-    const executor = client ?? this;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.query<R>(text, values);
 
     // Unset current score
-    await executor.query(
+    await run(
       `UPDATE ingredient_scores SET is_current = false WHERE ingredient_id = $1 AND is_current AND deleted_at IS NULL`,
       [data.ingredientId],
     );
@@ -616,7 +664,7 @@ export class IngredientsRepository extends BaseRepository {
       VALUES ($1, $2, $3, $4, $5, true)
       RETURNING *
     `;
-    const result = await executor.query<IngredientScoreRow>(sql, [
+    const result = await run<IngredientScoreRow>(sql, [
       data.ingredientId,
       data.score,
       data.grade,

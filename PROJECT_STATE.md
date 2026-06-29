@@ -7,11 +7,12 @@
 
 ## Current Sprint
 
-**Sprint:** `Sprint 2G — Scoring Engine`
-**Status:** ✅ Complete
+**Sprint:** `MVP Audit & Production Hardening`
+**Status:** ✅ P0 Phase 1 Complete (Backend Hardening)
 **Closed by:** Backend engineer
 
 **Previous sprints:**
+- `Sprint 2G — Scoring Engine` ✅ Complete
 - `Sprint 2F — Search Infrastructure Enhancement` ✅ Complete
 - `Sprint 2E — Data Platform Foundation` ✅ Complete
 - `Sprint 2D — Brands Module` ✅ Complete
@@ -30,6 +31,18 @@
 
 **Sprint:** `Sprint 5 — Frontend Foundation`
 **Status:** ⏳ Not Started
+
+## Audit Status
+
+| Area | Status | Notes |
+|------|--------|-------|
+| P0 Phase 1 (Backend Hardening) | ✅ Complete | Auth bypass, timeouts, RolesGuard, search_vector, trigram indexes, scoring auth |
+| P0 Phase 1.5 (TypeScript Compilation) | ✅ Complete | 245 → 0 production TS errors (3 test file errors remain — supertest types) |
+| P0 Phase 2 (Frontend) | ⏳ Pending | Next.js 15 app, packages, pages |
+| P0 Phase 3 (SEO & A11y) | ⏳ Pending | Metadata, JSON-LD, sitemap, WCAG 2.1 AA |
+| P0 Phase 4 (Deployment) | ⏳ Partial | Dockerfile fixed, deploy workflow created |
+| P0 Phase 5 (Testing) | ⏳ Pending | E2E, integration, performance, security |
+| Documentation | ✅ Complete | MVP_AUDIT.md, PRODUCTION_CHECKLIST.md, ROADMAP_V2.md |
 
 ---
 

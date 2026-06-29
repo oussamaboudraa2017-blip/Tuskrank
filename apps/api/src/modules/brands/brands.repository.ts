@@ -2,8 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { PoolClient } from 'pg';
 import { BaseRepository } from '@database';
 import type { Uuid } from '@types';
-import { SortOrder } from '../domain/enums';
-import type { BrandQuery, BrandSearchInput } from '../domain/interfaces';
+import { SortOrder } from './domain/enums';
+import type { BrandQuery, BrandSearchInput } from './domain/interfaces';
 
 /**
  * Wire-side row shape returned by the repository's enriched queries.
@@ -284,7 +284,13 @@ export class BrandsRepository extends BaseRepository {
     },
     client?: PoolClient,
   ): Promise<BrandRow> {
-    const executor = client ?? this;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.query<R>(text, values);
     const sql = `
       INSERT INTO brands (
         name, slug, manufacturer, country_code, website_url,
@@ -292,7 +298,7 @@ export class BrandsRepository extends BaseRepository {
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *
     `;
-    const result = await executor.query<BrandRow>(sql, [
+    const result = await run<BrandRow>(sql, [
       data.name,
       data.slug,
       data.manufacturer ?? null,
@@ -319,7 +325,13 @@ export class BrandsRepository extends BaseRepository {
     },
     client?: PoolClient,
   ): Promise<BrandRow> {
-    const executor = client ?? this;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.query<R>(text, values);
     const setClauses: string[] = [];
     const values: unknown[] = [];
     let idx = 1;
@@ -343,20 +355,32 @@ export class BrandsRepository extends BaseRepository {
       WHERE id = $${idx} AND deleted_at IS NULL
       RETURNING *
     `;
-    const result = await executor.query<BrandRow>(sql, values);
+    const result = await run<BrandRow>(sql, values);
     return result.rows[0];
   }
 
   async softDelete(id: Uuid, client?: PoolClient): Promise<void> {
-    const executor = client ?? this;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.query<R>(text, values);
     const sql = `UPDATE brands SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL`;
-    await executor.query(sql, [id]);
+    await run(sql, [id]);
   }
 
   async restore(id: Uuid, client?: PoolClient): Promise<void> {
-    const executor = client ?? this;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.query<R>(text, values);
     const sql = `UPDATE brands SET deleted_at = NULL WHERE id = $1 AND deleted_at IS NOT NULL`;
-    await executor.query(sql, [id]);
+    await run(sql, [id]);
   }
 
   /* ------------------------------------------------------------------

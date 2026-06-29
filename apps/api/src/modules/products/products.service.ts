@@ -10,7 +10,15 @@ import type {
   ProductSort,
   ProductPagination,
 } from './domain/interfaces/product-query.interface';
-import { ProductSortField, SortOrder } from './domain/enums/product.enums';
+import {
+  BreedSizeSlug,
+  FoodFormSlug,
+  LifeStageSlug,
+  PetTypeSlug,
+  ProductSortField,
+  ProteinOrigin,
+  SortOrder,
+} from './domain/enums';
 import {
   ProductNotFoundError,
   ProductSlugCollisionError,
@@ -179,7 +187,7 @@ export class ProductsService {
     if (!existing) throw new ProductNotFoundError(productId);
 
     // Check slug uniqueness (if changing)
-    if (patch.name !== undefined || patch.slug !== undefined) {
+    if (patch.name !== undefined) {
       // slug is not directly updatable in the current schema (UNIQUE per brand)
       // but name changes don't affect slug — slug is set at creation only.
     }
@@ -280,18 +288,19 @@ export class ProductsService {
     const page = params.page ?? 1;
     const limit = params.limit ?? 20;
 
-    const filters: ProductListFilters = {};
-    if (params.q) filters.q = params.q;
-    if (params.brandId) filters.brandId = params.brandId as Uuid;
-    if (params.petType) filters.petType = params.petType as never;
-    if (params.lifeStage) filters.lifeStage = params.lifeStage as never;
-    if (params.breedSize) filters.breedSize = params.breedSize as never;
-    if (params.foodForm) filters.foodForm = params.foodForm as never;
-    if (params.proteinOrigin) filters.proteinOrigin = params.proteinOrigin as never;
-    if (params.minScore !== undefined) filters.minScore = params.minScore;
-    if (params.maxScore !== undefined) filters.maxScore = params.maxScore;
-    if (params.isActive !== undefined) filters.isActive = params.isActive;
-    if (params.isPublished !== undefined) filters.isPublished = params.isPublished;
+    const filters: ProductListFilters = {
+      ...(params.q && { q: params.q }),
+      ...(params.brandId && { brandId: params.brandId as Uuid }),
+      ...(params.petType && { petType: params.petType as PetTypeSlug }),
+      ...(params.lifeStage && { lifeStage: params.lifeStage as LifeStageSlug }),
+      ...(params.breedSize && { breedSize: params.breedSize as BreedSizeSlug }),
+      ...(params.foodForm && { foodForm: params.foodForm as FoodFormSlug }),
+      ...(params.proteinOrigin && { proteinOrigin: params.proteinOrigin as ProteinOrigin }),
+      ...(params.minScore !== undefined && { minScore: params.minScore }),
+      ...(params.maxScore !== undefined && { maxScore: params.maxScore }),
+      ...(params.isActive !== undefined && { isActive: params.isActive }),
+      ...(params.isPublished !== undefined && { isPublished: params.isPublished }),
+    };
 
     const sort: ProductSort = {
       by: (params.sortBy as ProductSortField) ?? ProductSortField.PublishedAt,

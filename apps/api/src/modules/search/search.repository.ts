@@ -85,9 +85,9 @@ export class SearchRepository {
       LEFT JOIN search_keywords sk ON sk.entity_id = p.id AND sk.entity_type = 'product' AND sk.deleted_at IS NULL
       ${where}
         AND (
-          to_tsvector('english', p.name) @@ to_tsquery('english', $2)
+          p.search_vector @@ to_tsquery('simple', $2)
           OR similarity(p.name, $1) >= $3
-          OR i.name IS NOT NULL AND to_tsvector('english', i.name) @@ to_tsquery('english', $2)
+          OR i.name IS NOT NULL AND i.search_vector @@ to_tsquery('simple', $2)
           OR sk.normalized % $1
         )
     `;
@@ -111,7 +111,7 @@ export class SearchRepository {
          WHERE pi2.product_id = p.id AND pi2.is_primary AND pi2.deleted_at IS NULL
          LIMIT 1) AS image_url,
         GREATEST(
-          ts_rank(to_tsvector('english', p.name), to_tsquery('english', $2)) * 0.5,
+          ts_rank(p.search_vector, to_tsquery('simple', $2)) * 0.5,
           similarity(p.name, $1) * 0.3,
           CASE WHEN sk.normalized % $1 THEN 0.2 ELSE 0 END
         ) AS search_score,
@@ -124,9 +124,9 @@ export class SearchRepository {
       LEFT JOIN search_keywords sk ON sk.entity_id = p.id AND sk.entity_type = 'product' AND sk.deleted_at IS NULL
       ${where}
         AND (
-          to_tsvector('english', p.name) @@ to_tsquery('english', $2)
+          p.search_vector @@ to_tsquery('simple', $2)
           OR similarity(p.name, $1) >= $3
-          OR i.name IS NOT NULL AND to_tsvector('english', i.name) @@ to_tsquery('english', $2)
+          OR i.name IS NOT NULL AND i.search_vector @@ to_tsquery('simple', $2)
           OR sk.normalized % $1
         )
       ORDER BY p.id, search_score DESC

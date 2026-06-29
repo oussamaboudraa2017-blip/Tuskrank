@@ -337,10 +337,17 @@ export type AddIngredientEntryInput = z.infer<typeof AddIngredientEntrySchema>;
  * Admin-side lifecycle query
  * ================================================================== */
 
-export const AdminListProductsSchema = ListProductsSchema.extend({
+export const AdminListProductsSchema = z.object({
+  ...FiltersBaseSchema.shape,
+  ...PaginationSchema.shape,
+  sortBy: ProductSortFieldSchema.optional(),
+  sortOrder: SortOrderSchema.optional(),
   includeSoftDeleted: z.boolean().default(false),
   includeArchived: z.boolean().default(false),
-});
+}).refine(
+  (q) => q.minScore === undefined || q.maxScore === undefined || q.minScore <= q.maxScore,
+  { message: 'minScore must be <= maxScore', path: ['minScore'] },
+);
 
 export type AdminListProductsInput = z.infer<typeof AdminListProductsSchema>;
 

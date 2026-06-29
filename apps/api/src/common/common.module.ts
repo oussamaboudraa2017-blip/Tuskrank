@@ -69,7 +69,10 @@ import { APP_CONSTANTS } from './constants/app.constants';
       provide: APP_INTERCEPTOR,
       useClass: EnvelopeInterceptor,
     },
-    RolesGuard,
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
+    },
   ],
   exports: [
     LoggerCoreModule,

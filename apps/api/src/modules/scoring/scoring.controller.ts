@@ -10,7 +10,7 @@ import {
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { ScoringService } from './scoring.service';
 import { ScoreProductDto, BulkScoreDto } from './dto';
-import { Public } from '@common/decorators';
+import { Public, Roles } from '@common/decorators';
 import { okResponse } from '@common/dto';
 import { ScoringConfig } from './types';
 
@@ -34,7 +34,7 @@ export class ScoringController {
    * ================================================================ */
 
   @Post('score')
-  @Public()
+  @Roles('admin')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Compute and persist a score for a single product.' })
   async scoreProduct(@Body() dto: ScoreProductDto) {
@@ -52,7 +52,7 @@ export class ScoringController {
    * ================================================================ */
 
   @Post('bulk')
-  @Public()
+  @Roles('admin')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Score multiple products in a batch.' })
   async bulkScore(@Body() dto: BulkScoreDto) {

@@ -67,7 +67,7 @@ export class ProductsRepository extends BaseRepository<BaseEntity> {
 
     const row = result.rows[0];
     await this.hydrateChildren(row);
-    return ProductMapper.dbToDomain(row);
+    return ProductMapper.dbToDomain(row) as unknown as Product;
   }
 
   async findBySlug(
@@ -85,7 +85,7 @@ export class ProductsRepository extends BaseRepository<BaseEntity> {
 
     const row = result.rows[0];
     await this.hydrateChildren(row);
-    return ProductMapper.dbToDomain(row);
+    return ProductMapper.dbToDomain(row) as unknown as Product;
   }
 
   async findMany(
@@ -109,7 +109,7 @@ export class ProductsRepository extends BaseRepository<BaseEntity> {
 
     const rows = result.rows;
     await Promise.all(rows.map((r) => this.hydrateChildren(r)));
-    return rows.map((r) => ProductMapper.dbToDomain(r));
+    return rows.map((r) => ProductMapper.dbToDomain(r) as unknown as Product);
   }
 
   async findFeatured(
@@ -146,7 +146,7 @@ export class ProductsRepository extends BaseRepository<BaseEntity> {
 
     const rows = result.rows;
     await Promise.all(rows.map((r) => this.hydrateChildren(r)));
-    return rows.map((r) => ProductMapper.dbToDomain(r));
+    return rows.map((r) => ProductMapper.dbToDomain(r) as unknown as Product);
   }
 
   async findTopRated(
@@ -225,8 +225,8 @@ export class ProductsRepository extends BaseRepository<BaseEntity> {
     }
 
     const where = `WHERE ${conditions.join(' AND ')}`;
-    const limit = input.top ?? input.pagination?.limit ?? 20;
-    const page = input.pagination?.page ?? 1;
+    const limit = input.top ?? 20;
+    const page = 1;
     const offset = (page - 1) * limit;
 
     const base = this.productBaseQuery();
@@ -239,7 +239,7 @@ export class ProductsRepository extends BaseRepository<BaseEntity> {
 
     const rows = result.rows;
     await Promise.all(rows.map((r) => this.hydrateChildren(r)));
-    return rows.map((r) => ProductMapper.dbToDomain(r));
+    return rows.map((r) => ProductMapper.dbToDomain(r) as unknown as Product);
   }
 
   /* ================================================================
@@ -327,7 +327,13 @@ export class ProductsRepository extends BaseRepository<BaseEntity> {
     },
     client?: PoolClient,
   ): Promise<Product> {
-    const executor = client ?? this.db;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.db.query<R>(text, values);
     const sql = `
       INSERT INTO products (
         brand_id, name, slug, description, upc, sku,
@@ -339,7 +345,7 @@ export class ProductsRepository extends BaseRepository<BaseEntity> {
       )
       RETURNING *
     `;
-    const result = await executor.query<ProductRow & { id: Uuid }>(sql, [
+    const result = await run<ProductRow & { id: Uuid }>(sql, [
       input.brandId,
       input.name,
       input.slug,
@@ -372,7 +378,13 @@ export class ProductsRepository extends BaseRepository<BaseEntity> {
     },
     client?: PoolClient,
   ): Promise<Product> {
-    const executor = client ?? this.db;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.db.query<R>(text, values);
     const setClauses: string[] = [];
     const values: unknown[] = [];
     let idx = 1;
@@ -396,49 +408,73 @@ export class ProductsRepository extends BaseRepository<BaseEntity> {
       WHERE id = $${idx} AND deleted_at IS NULL
       RETURNING *
     `;
-    await executor.query(sql, values);
+    await run(sql, values);
     return this.findById(productId, { includeUnpublished: true }) as Promise<Product>;
   }
 
   async softDelete(productId: Uuid, client?: PoolClient): Promise<void> {
-    const executor = client ?? this.db;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.db.query<R>(text, values);
     const sql = `
       UPDATE products
       SET deleted_at = NOW(), is_active = false, updated_at = NOW()
       WHERE id = $1 AND deleted_at IS NULL
     `;
-    await executor.query(sql, [productId]);
+    await run(sql, [productId]);
   }
 
   async restore(productId: Uuid, client?: PoolClient): Promise<void> {
-    const executor = client ?? this.db;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.db.query<R>(text, values);
     const sql = `
       UPDATE products
       SET deleted_at = NULL, updated_at = NOW()
       WHERE id = $1 AND deleted_at IS NOT NULL
     `;
-    await executor.query(sql, [productId]);
+    await run(sql, [productId]);
   }
 
   async publish(productId: Uuid, publishedAt?: Date, client?: PoolClient): Promise<void> {
-    const executor = client ?? this.db;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.db.query<R>(text, values);
     const ts = publishedAt ?? new Date();
     const sql = `
       UPDATE products
       SET published_at = $1, is_active = true, updated_at = NOW()
       WHERE id = $2 AND deleted_at IS NULL
     `;
-    await executor.query(sql, [ts.toISOString(), productId]);
+    await run(sql, [ts.toISOString(), productId]);
   }
 
   async unpublish(productId: Uuid, client?: PoolClient): Promise<void> {
-    const executor = client ?? this.db;
+    const run = <R extends Record<string, any> = Record<string, any>>(
+      text: string,
+      values: ReadonlyArray<unknown> = [],
+    ) =>
+      client
+        ? client.query<R>(text, [...values])
+        : this.db.query<R>(text, values);
     const sql = `
       UPDATE products
       SET published_at = NULL, updated_at = NOW()
       WHERE id = $1 AND deleted_at IS NULL
     `;
-    await executor.query(sql, [productId]);
+    await run(sql, [productId]);
   }
 
   /* ================================================================
@@ -592,14 +628,15 @@ export class ProductsRepository extends BaseRepository<BaseEntity> {
       ]);
 
     // Mutate the row in place — the mapper expects these arrays.
-    (row as Record<string, unknown>).images = imagesRes.rows;
-    (row as Record<string, unknown>).ingredient_panel = ingredientsRes.rows;
-    (row as Record<string, unknown>).tags = tagsRes.rows;
-    (row as Record<string, unknown>).claims = claimsRes.rows;
-    (row as Record<string, unknown>).targeting = targetingRes.rows;
-    (row as Record<string, unknown>).nutrition_profiles = nutritionRes.rows;
-    (row as Record<string, unknown>).nutrient_values = nutrientsRes.rows;
-    (row as Record<string, unknown>).score_history = scoreHistoryRes.rows;
+    const mutableRow = row as Record<string, any>;
+    mutableRow.images = imagesRes.rows;
+    mutableRow.ingredient_panel = ingredientsRes.rows;
+    mutableRow.tags = tagsRes.rows;
+    mutableRow.claims = claimsRes.rows;
+    mutableRow.targeting = targetingRes.rows;
+    mutableRow.nutrition_profiles = nutritionRes.rows;
+    mutableRow.nutrient_values = nutrientsRes.rows;
+    mutableRow.score_history = scoreHistoryRes.rows;
   }
 
   private toTsQuery(q: string): string {

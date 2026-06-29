@@ -26,6 +26,11 @@ CREATE INDEX idx_brands_active_name
     ON brands (lower(name))
     WHERE deleted_at IS NULL AND is_active;
 
+-- GIN trigram for fuzzy brand name search
+CREATE INDEX idx_brands_name_trgm
+    ON brands USING gin (name gin_trgm_ops)
+    WHERE deleted_at IS NULL AND is_active;
+
 -- country_code is a CHAR(2) now (alpha-2); this B-tree replaces the
 -- previous char-class-string indexed column.
 CREATE INDEX idx_brands_country
@@ -357,6 +362,9 @@ CREATE INDEX idx_transparency_reports_brand_year
 -- Partial on active rows keeps the hot path cheap.
 CREATE INDEX idx_search_keywords_normalized
     ON search_keywords (normalized)
+    WHERE deleted_at IS NULL;
+CREATE INDEX idx_search_keywords_normalized_trgm
+    ON search_keywords USING gin (normalized gin_trgm_ops)
     WHERE deleted_at IS NULL;
 CREATE INDEX idx_search_keywords_entity
     ON search_keywords (entity_type, entity_id)

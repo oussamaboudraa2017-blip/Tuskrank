@@ -49,7 +49,15 @@ export class ScientificEvidenceStrategy implements ScoringStrategy {
     score += evidenceQualityScore * 40;
 
     // Factor 3: Diversity of evidence (not all from one source)
-    const uniqueUrls = new Set(scientificReferences.map((r) => new URL(r.url).hostname)).size;
+    const uniqueHostnames = new Set<string>();
+    for (const ref of scientificReferences) {
+      try {
+        uniqueHostnames.add(new URL(ref.url).hostname);
+      } catch {
+        // Skip malformed URLs
+      }
+    }
+    const uniqueUrls = uniqueHostnames.size;
     const diversityScore = Math.min(100, uniqueUrls * 30);
     score += diversityScore * 20;
 

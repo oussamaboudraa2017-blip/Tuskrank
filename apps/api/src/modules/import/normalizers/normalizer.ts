@@ -173,7 +173,7 @@ export function parsePackageSizeToGrams(label: string): number | null {
  *   "grain-free, high protein" → ["grain-free", "high protein"]
  *   "a;b;c"                    → ["a", "b", "c"]
  */
-export function normalizeList(value: string | null | undefined): string[] {
+export function normalizeList(value: string | string[] | null | undefined): string[] {
   if (value === null || value === undefined) return [];
   if (typeof value === 'string') {
     return value

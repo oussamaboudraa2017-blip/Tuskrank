@@ -92,16 +92,7 @@ export class ScoringRepository {
       moisture_percent: number | null;
     }>(nutritionSql, [productId]);
 
-    // 4. Fetch brand certifications
-    const certsSql = `
-      SELECT c.name
-      FROM brand_certifications bc
-      JOIN certifications c ON c.id = bc.certification_id
-      WHERE bc.brand_id = $1 AND bc.deleted_at IS NULL
-    `;
-    const certsResult = await this.db.query<{ name: string }>(certsSql, [product.brand_id]);
-
-    // 5. Fetch claims
+    // 4. Fetch claims
     const claimsSql = `
       SELECT cl.name
       FROM product_claims pc

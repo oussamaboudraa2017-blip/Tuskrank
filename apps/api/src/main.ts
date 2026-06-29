@@ -94,6 +94,11 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
+  /* Express-level request timeouts — prevents clients holding connections indefinitely. */
+  const httpServer = app.getHttpServer();
+  httpServer.requestTimeout = 30_000;
+  httpServer.headersTimeout = 10_000;
+
   /* Graceful shutdown. */
   app.enableShutdownHooks();
 

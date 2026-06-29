@@ -43,7 +43,9 @@ export class SupabaseAuthGuard implements CanActivate {
     const url = this.config.get<string>('SUPABASE_URL', '');
     const anon = this.config.get<string>('SUPABASE_ANON_KEY', '');
     this.nodeEnv = this.config.get<string>('NODE_ENV', 'development');
-    this.bypassInDev = this.nodeEnv === AppEnvironment.Development;
+    this.bypassInDev =
+      this.nodeEnv === AppEnvironment.Development &&
+      this.config.get<string>('AUTH_BYPASS_ENABLED', 'false') === 'true';
 
     if (url && anon) {
       this.client = createClient(url, anon, {
@@ -152,7 +154,7 @@ export class SupabaseAuthGuard implements CanActivate {
 
   private handleUnauthenticated(req: Request): boolean {
     if (this.bypassInDev) {
-      req.user = this.devBypassUser();
+      (req as any).user = this.devBypassUser();
       return true;
     }
     throw new UnauthorizedError('Missing bearer token');

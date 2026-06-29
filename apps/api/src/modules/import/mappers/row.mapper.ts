@@ -44,7 +44,9 @@ export function mapProductRow(row: RawImportRow): NormalizedProductRow {
     ? normalizePackageSizeLabel(String(row.package_size_label))
     : null;
   const packageSizeGramsFromLabel = packageSizeLabel ? parsePackageSizeToGrams(packageSizeLabel) : null;
-  const packageSizeGramsFromField = row.package_size_grams ? normalizeNumeric(row.package_size_grams) : null;
+  const packageSizeGramsFromField = row.package_size_grams != null && typeof row.package_size_grams !== 'boolean'
+    ? normalizeNumeric(row.package_size_grams)
+    : null;
 
   return {
     brandName: normalizeBrandName(String(row.brand_name ?? '')),
@@ -63,16 +65,16 @@ export function mapProductRow(row: RawImportRow): NormalizedProductRow {
     categories: normalizeList(String(row.categories ?? '')),
     claims: normalizeList(String(row.claims ?? '')),
     tags: normalizeList(String(row.tags ?? '')),
-    kcalPer100g: row.kcal_per_100g !== null && row.kcal_per_100g !== undefined ? normalizeNumeric(row.kcal_per_100g) : null,
-    moisturePct: row.moisture_pct !== null && row.moisture_pct !== undefined ? normalizeNumeric(row.moisture_pct) : null,
-    proteinPct: row.protein_pct !== null && row.protein_pct !== undefined ? normalizeNumeric(row.protein_pct) : null,
-    fatPct: row.fat_pct !== null && row.fat_pct !== undefined ? normalizeNumeric(row.fat_pct) : null,
-    fiberPct: row.fiber_pct !== null && row.fiber_pct !== undefined ? normalizeNumeric(row.fiber_pct) : null,
-    ashPct: row.ash_pct !== null && row.ash_pct !== undefined ? normalizeNumeric(row.ash_pct) : null,
-    omega3Pct: row.omega3_pct !== null && row.omega3_pct !== undefined ? normalizeNumeric(row.omega3_pct) : null,
-    omega6Pct: row.omega6_pct !== null && row.omega6_pct !== undefined ? normalizeNumeric(row.omega6_pct) : null,
-    calciumPct: row.calcium_pct !== null && row.calcium_pct !== undefined ? normalizeNumeric(row.calcium_pct) : null,
-    phosphorusPct: row.phosphorus_pct !== null && row.phosphorus_pct !== undefined ? normalizeNumeric(row.phosphorus_pct) : null,
+    kcalPer100g: row.kcal_per_100g != null && typeof row.kcal_per_100g !== 'boolean' ? normalizeNumeric(row.kcal_per_100g) : null,
+    moisturePct: row.moisture_pct != null && typeof row.moisture_pct !== 'boolean' ? normalizeNumeric(row.moisture_pct) : null,
+    proteinPct: row.protein_pct != null && typeof row.protein_pct !== 'boolean' ? normalizeNumeric(row.protein_pct) : null,
+    fatPct: row.fat_pct != null && typeof row.fat_pct !== 'boolean' ? normalizeNumeric(row.fat_pct) : null,
+    fiberPct: row.fiber_pct != null && typeof row.fiber_pct !== 'boolean' ? normalizeNumeric(row.fiber_pct) : null,
+    ashPct: row.ash_pct != null && typeof row.ash_pct !== 'boolean' ? normalizeNumeric(row.ash_pct) : null,
+    omega3Pct: row.omega3_pct != null && typeof row.omega3_pct !== 'boolean' ? normalizeNumeric(row.omega3_pct) : null,
+    omega6Pct: row.omega6_pct != null && typeof row.omega6_pct !== 'boolean' ? normalizeNumeric(row.omega6_pct) : null,
+    calciumPct: row.calcium_pct != null && typeof row.calcium_pct !== 'boolean' ? normalizeNumeric(row.calcium_pct) : null,
+    phosphorusPct: row.phosphorus_pct != null && typeof row.phosphorus_pct !== 'boolean' ? normalizeNumeric(row.phosphorus_pct) : null,
     imageUrl: row.image_url ? normalizeUrl(String(row.image_url)) : null,
     isActive: normalizeBoolean(row.is_active, true),
   };

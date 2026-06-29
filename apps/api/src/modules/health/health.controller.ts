@@ -19,10 +19,6 @@ import { Public } from '@common/decorators';
 
 const POSTGRES_HEALTH_BUDGET_MS = 1500;
 
-/**
- * Custom indicator that probes Supabase Postgres through
- * DatabaseService.healthcheck() with a hard 1.5s budget.
- */
 @Injectable()
 export class PostgresHealthIndicator extends HealthIndicator {
   constructor(private readonly db: DatabaseService) {
@@ -40,21 +36,12 @@ export class PostgresHealthIndicator extends HealthIndicator {
     const { ok, latencyMs } = await Promise.race([probe, timeout]);
     const result = this.getStatus(key, ok, { latencyMs });
     if (!ok) {
-      throw new Error(result);
+      throw new Error('postgres_unreachable');
     }
     return result;
   }
 }
 
-/**
- * Health module:
- *   * GET /api/v1/health         — full check (liveness + readiness)
- *   * GET /api/v1/health/live    — liveness only — public
- *   * GET /api/v1/health/ready   — readiness only — public
- *
- * All routes are `@Public()` since they are operated at the network
- * (Kubernetes probe) layer — not user-facing.
- */
 @ApiTags('health')
 @Public()
 @Controller({ path: 'health', version: '1' })
@@ -62,6 +49,7 @@ export class HealthController {
   constructor(
     private readonly health: HealthCheckService,
     private readonly db: DatabaseService,
+    private readonly postgres: PostgresHealthIndicator,
     private readonly memory: MemoryHealthIndicator,
     private readonly cfg: ConfigService,
   ) {}
@@ -81,7 +69,7 @@ export class HealthController {
           'memory_rss',
           this.cfg.get<number>('HEALTH_MEMORY_RSS_THRESHOLD', 512),
         ),
-      () => this.postgresCheck('postgres'),
+      () => this.postgres.pingCheck('postgres'),
     ]);
   }
 
@@ -96,20 +84,6 @@ export class HealthController {
   @HealthCheck()
   @ApiOperation({ summary: 'Readiness check (can serve traffic).' })
   ready() {
-    return this.health.check([() => this.postgresCheck('postgres')]);
-  }
-
-  private async postgresCheck(key: string): Promise<HealthIndicatorResult> {
-    const probe = (async () => this.db.healthcheck())();
-    const timeout = new Promise<{ ok: false; latencyMs: number }>((resolve) =>
-      setTimeout(
-        () => resolve({ ok: false, latencyMs: POSTGRES_HEALTH_BUDGET_MS }),
-        POSTGRES_HEALTH_BUDGET_MS,
-      ),
-    );
-    const { ok, latencyMs } = await Promise.race([probe, timeout]);
-    const result = this.getStatus(key, ok, { latencyMs });
-    if (!ok) throw new Error('postgres_unreachable');
-    return result;
+    return this.health.check([() => this.postgres.pingCheck('postgres')]);
   }
 }

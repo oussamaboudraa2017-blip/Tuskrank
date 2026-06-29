@@ -3,7 +3,7 @@ import { Params } from 'nestjs-pino';
 import type { IncomingMessage } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
-import type { LogFormat, LogLevel } from '@common/enums';
+import { LogFormat, LogLevel } from '@common/enums';
 import { APP_CONSTANTS } from '@common/constants/app.constants';
 
 /**
@@ -34,8 +34,8 @@ const BASE_REDACT_PATHS = [
 export function buildPinoParams(
   config: ConfigService,
 ): Params & { pinoHttp: Params['pinoHttp'] } {
-  const level = config.get<LogLevel>('LOG_LEVEL', LogLevel.Info);
-  const format = config.get<LogFormat>('LOG_FORMAT', LogFormat.Json);
+  const level: string = config.get('LOG_LEVEL', LogLevel.Info);
+  const format: string = config.get('LOG_FORMAT', LogFormat.Json);
   const appName = config.get<string>('APP_NAME', 'tuskrank-api');
   const nodeEnv = config.get<string>('NODE_ENV', 'development');
 
@@ -53,7 +53,7 @@ export function buildPinoParams(
   return {
     pinoHttp: {
       level,
-      ...(format === 'pretty'
+      ...(format === LogFormat.Pretty
         ? {
             transport: {
               target: 'pino-pretty',
@@ -90,5 +90,5 @@ export function buildPinoParams(
       },
       autoLogging: nodeEnv !== 'test',
     },
-  };
+  } as Params & { pinoHttp: Params['pinoHttp'] };
 }

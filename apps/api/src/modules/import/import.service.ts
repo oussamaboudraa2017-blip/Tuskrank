@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
+import { DatabaseService } from '@database';
 import { ImportRepository } from './import.repository';
 import { parseCsv } from './parsers/csv.parser';
 import { parseJson } from './parsers/json.parser';
@@ -10,6 +11,8 @@ import type {
   ImportContext,
   ImportJob,
   ImportReport,
+  ImportReportError,
+  ImportReportWarning,
   ImportRowResult,
   NormalizedBrandRow,
   NormalizedProductRow,
@@ -39,7 +42,13 @@ export class ImportService {
   /** Simple concurrency guard — one import at a time. */
   private running = false;
 
-  constructor(private readonly repo: ImportRepository) {}
+  /** Pre-loaded lookup cache for FK resolution. Key: `${table}:${lower(name)}`. */
+  private lookupCache = new Map<string, { id: string; slug?: string }>();
+
+  constructor(
+    private readonly repo: ImportRepository,
+    private readonly db: DatabaseService,
+  ) {}
 
   /* ================================================================
    * Public API
@@ -103,6 +112,7 @@ export class ImportService {
 
       // Step 5: Save
       this.updateJobStatus(ctx.jobId, ImportJobStatus.Saving);
+      await this.buildLookupCache(ctx);
       ctx.savedResults = await this.save(ctx);
 
       // Step 6: Complete
@@ -150,8 +160,8 @@ export class ImportService {
     const job = this.jobs.get(jobId);
     if (!job) return undefined;
 
-    const errors: ImportReport['errors'] = [];
-    const warnings: ImportReport['warnings'] = [];
+    const errors: ImportReportError[] = [];
+    const warnings: ImportReportWarning[] = [];
 
     for (const row of job.results.rowResults) {
       if (row.status === ImportRowStatus.Failed && row.errors) {
@@ -179,17 +189,58 @@ export class ImportService {
   }
 
   /* ================================================================
+   * Lookup cache (N+1 fix)
+   * ================================================================ */
+
+  /**
+   * Pre-load all lookup table data into a Map for O(1) FK resolution.
+   * Eliminates per-row queries for food_forms, protein_sources, pet_types,
+   * life_stages, breed_sizes, claims, tags, and nutrients.
+   */
+  private async buildLookupCache(ctx: ImportContext): Promise<void> {
+    this.lookupCache.clear();
+
+    const loadTable = async (tableName: string, query: string) => {
+      const result = await this.db.query<{ id: string; name: string; slug?: string }>(query, []);
+      for (const row of result.rows) {
+        this.lookupCache.set(`${tableName}:${row.name.toLowerCase()}`, {
+          id: row.id,
+          slug: row.slug,
+        });
+      }
+    };
+
+    await Promise.all([
+      loadTable('food_forms', 'SELECT id, name FROM food_forms LIMIT 500'),
+      loadTable('protein_sources', 'SELECT id, name FROM protein_sources LIMIT 500'),
+      loadTable('pet_types', 'SELECT id, name FROM pet_types LIMIT 50'),
+      loadTable('life_stages', 'SELECT id, name FROM life_stages LIMIT 200'),
+      loadTable('breed_sizes', 'SELECT id, name FROM breed_sizes LIMIT 200'),
+      loadTable('claims', 'SELECT id, name FROM claims WHERE deleted_at IS NULL LIMIT 500'),
+      loadTable('tags', 'SELECT id, name FROM tags WHERE deleted_at IS NULL LIMIT 500'),
+      loadTable('nutrients', 'SELECT id, name FROM nutrients WHERE deleted_at IS NULL LIMIT 500'),
+      loadTable('ingredient_categories', 'SELECT id, name FROM ingredient_categories WHERE deleted_at IS NULL LIMIT 500'),
+    ]);
+
+    this.logger.log(`Lookup cache built: ${this.lookupCache.size} entries`);
+  }
+
+  private lookupId(table: string, name: string): string | null {
+    return this.lookupCache.get(`${table}:${name.toLowerCase()}`)?.id ?? null;
+  }
+
+  /* ================================================================
    * Pipeline stages
    * ================================================================ */
 
   private parse(ctx: ImportContext, content: string): typeof ctx.rawRows {
     if (ctx.format === ImportFormat.Csv) {
       const result = parseCsv(content);
-      return result.rows;
+      return [...result.rows];
     }
     if (ctx.format === ImportFormat.Json) {
       const result = parseJson(content);
-      return result.rows;
+      return [...result.rows];
     }
     throw new ImportInvalidFormatError(ctx.format);
   }
@@ -351,154 +402,142 @@ export class ImportService {
   }
 
   private async saveProduct(row: NormalizedProductRow) {
-    // Resolve brand
-    let brand = await this.repo.findBrandByName(row.brandName);
-    if (!brand) {
-      // Auto-create brand
-      brand = await this.repo.insertBrand({
-        name: row.brandName,
-        slug: row.brandName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
-      });
-    }
-
-    // Resolve food form
-    let foodFormId: string | null = null;
-    if (row.foodForm) {
-      const ff = await this.repo.findFoodFormByName(row.foodForm);
-      foodFormId = ff?.id ?? null;
-    }
-
-    // Resolve protein source
-    let proteinSourceId: string | null = null;
-    if (row.primaryProteinSource) {
-      const ps = await this.repo.findProteinSourceByName(row.primaryProteinSource);
-      proteinSourceId = ps?.id ?? null;
-    }
-
-    const product = await this.repo.insertProduct({
-      brandId: brand.id,
-      name: row.name,
-      slug: row.slug,
-      description: row.description,
-      upc: row.upc,
-      sku: row.sku,
-      packageSizeGrams: row.packageSizeGrams,
-      packageSizeLabel: row.packageSizeLabel,
-      foodFormId,
-      primaryProteinSourceId: proteinSourceId,
-      isActive: row.isActive,
-    });
-
-    // Resolve and insert targeting
-    for (const petTypeName of row.petTypes) {
-      const petType = await this.repo.findPetTypeByName(petTypeName);
-      if (petType) {
-        let lifeStageId: string | null = null;
-        let breedSizeId: string | null = null;
-
-        for (const lsName of row.lifeStages) {
-          const ls = await this.repo.findLifeStageByName(lsName);
-          if (ls) lifeStageId = ls.id;
-        }
-        for (const bsName of row.breedSizes) {
-          const bs = await this.repo.findBreedSizeByName(bsName);
-          if (bs) breedSizeId = bs.id;
-        }
-
-        await this.repo.insertProductTargeting({
-          productId: product.id,
-          petTypeId: petType.id,
-          lifeStageId,
-          breedSizeId,
+    return this.db.transaction(async (_client: import('pg').PoolClient) => {
+      // Resolve brand (still per-row since brands may be auto-created)
+      let brand = await this.repo.findBrandByName(row.brandName);
+      if (!brand) {
+        brand = await this.repo.insertBrand({
+          name: row.brandName,
+          slug: row.brandName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
         });
       }
-    }
 
-    // Resolve and insert claims
-    for (const claimName of row.claims) {
-      const claim = await this.repo.findClaimByName(claimName);
-      if (claim) {
-        await this.repo.insertProductClaim(product.id, claim.id);
-      }
-    }
+      // Resolve food form (from cache)
+      const foodFormId = row.foodForm ? this.lookupId('food_forms', row.foodForm) : null;
 
-    // Resolve and insert tags
-    for (const tagName of row.tags) {
-      const tag = await this.repo.findTagByName(tagName);
-      if (tag) {
-        await this.repo.insertProductTag(product.id, tag.id);
-      }
-    }
+      // Resolve protein source (from cache)
+      const proteinSourceId = row.primaryProteinSource
+        ? this.lookupId('protein_sources', row.primaryProteinSource)
+        : null;
 
-    // Insert nutrition profile if we have calorie data
-    if (row.kcalPer100g !== null || row.moisturePct !== null) {
-      const profile = await this.repo.insertNutritionProfile({
-        productId: product.id,
-        kcalPer100g: row.kcalPer100g,
-        moisturePct: row.moisturePct,
-        source: 'import',
+      const product = await this.repo.insertProduct({
+        brandId: brand.id,
+        name: row.name,
+        slug: row.slug,
+        description: row.description,
+        upc: row.upc,
+        sku: row.sku,
+        packageSizeGrams: row.packageSizeGrams,
+        packageSizeLabel: row.packageSizeLabel,
+        foodFormId,
+        primaryProteinSourceId: proteinSourceId,
+        isActive: row.isActive,
       });
 
-      // Insert nutrient values
-      const nutrientMap: Array<{ name: string; value: number | null; unit: string }> = [
-        { name: 'Protein', value: row.proteinPct, unit: '%' },
-        { name: 'Fat', value: row.fatPct, unit: '%' },
-        { name: 'Fiber', value: row.fiberPct, unit: '%' },
-        { name: 'Ash', value: row.ashPct, unit: '%' },
-        { name: 'Omega-3 Fatty Acids', value: row.omega3Pct, unit: '%' },
-        { name: 'Omega-6 Fatty Acids', value: row.omega6Pct, unit: '%' },
-        { name: 'Calcium', value: row.calciumPct, unit: '%' },
-        { name: 'Phosphorus', value: row.phosphorusPct, unit: '%' },
-      ];
+      // Resolve and insert targeting (from cache)
+      for (const petTypeName of row.petTypes) {
+        const petTypeId = this.lookupId('pet_types', petTypeName);
+        if (petTypeId) {
+          const lifeStageId = row.lifeStages.length > 0
+            ? this.lookupId('life_stages', row.lifeStages[0])
+            : null;
+          const breedSizeId = row.breedSizes.length > 0
+            ? this.lookupId('breed_sizes', row.breedSizes[0])
+            : null;
 
-      for (const nutrient of nutrientMap) {
-        if (nutrient.value !== null) {
-          const nutrientRow = await this.repo.findNutrientByName(nutrient.name);
-          if (nutrientRow) {
-            await this.repo.insertProductNutrient({
-              productId: product.id,
-              nutrientId: nutrientRow.id,
-              nutritionProfileId: profile.id,
-              amount: nutrient.value,
-              unit: nutrient.unit,
-            });
+          await this.repo.insertProductTargeting({
+            productId: product.id,
+            petTypeId,
+            lifeStageId,
+            breedSizeId,
+          });
+        }
+      }
+
+      // Resolve and insert claims (from cache)
+      for (const claimName of row.claims) {
+        const claimId = this.lookupId('claims', claimName);
+        if (claimId) {
+          await this.repo.insertProductClaim(product.id, claimId);
+        }
+      }
+
+      // Resolve and insert tags (from cache)
+      for (const tagName of row.tags) {
+        const tagId = this.lookupId('tags', tagName);
+        if (tagId) {
+          await this.repo.insertProductTag(product.id, tagId);
+        }
+      }
+
+      // Insert nutrition profile if we have calorie data
+      if (row.kcalPer100g !== null || row.moisturePct !== null) {
+        const profile = await this.repo.insertNutritionProfile({
+          productId: product.id,
+          kcalPer100g: row.kcalPer100g,
+          moisturePct: row.moisturePct,
+          source: 'import',
+        });
+
+        // Insert nutrient values (from cache)
+        const nutrientMap: Array<{ name: string; value: number | null; unit: string }> = [
+          { name: 'Protein', value: row.proteinPct, unit: '%' },
+          { name: 'Fat', value: row.fatPct, unit: '%' },
+          { name: 'Fiber', value: row.fiberPct, unit: '%' },
+          { name: 'Ash', value: row.ashPct, unit: '%' },
+          { name: 'Omega-3 Fatty Acids', value: row.omega3Pct, unit: '%' },
+          { name: 'Omega-6 Fatty Acids', value: row.omega6Pct, unit: '%' },
+          { name: 'Calcium', value: row.calciumPct, unit: '%' },
+          { name: 'Phosphorus', value: row.phosphorusPct, unit: '%' },
+        ];
+
+        for (const nutrient of nutrientMap) {
+          if (nutrient.value !== null) {
+            const nutrientId = this.lookupId('nutrients', nutrient.name);
+            if (nutrientId) {
+              await this.repo.insertProductNutrient({
+                productId: product.id,
+                nutrientId,
+                nutritionProfileId: profile.id,
+                amount: nutrient.value,
+                unit: nutrient.unit,
+              });
+            }
           }
         }
       }
-    }
 
-    // Insert image
-    if (row.imageUrl) {
-      await this.repo.insertProductImage({
-        productId: product.id,
-        publicUrl: row.imageUrl,
-        storagePath: `imports/${product.slug}/image`,
-        altText: row.name,
-        isPrimary: true,
-      });
-    }
+      // Insert image
+      if (row.imageUrl) {
+        await this.repo.insertProductImage({
+          productId: product.id,
+          publicUrl: row.imageUrl,
+          storagePath: `imports/${product.slug}/image`,
+          altText: row.name,
+          isPrimary: true,
+        });
+      }
 
-    return product;
+      return product;
+    });
   }
 
   private async saveIngredient(row: NormalizedIngredientRow) {
-    let categoryId: string | null = null;
-    if (row.category) {
-      const cat = await this.repo.findIngredientCategoryByName(row.category);
-      categoryId = cat?.id ?? null;
-    }
+    return this.db.transaction(async () => {
+      const categoryId = row.category ? this.lookupId('ingredient_categories', row.category) : null;
 
-    return this.repo.insertIngredient({
-      name: row.name,
-      slug: row.slug,
-      inciName: row.inciName,
-      categoryId,
-      canonicalName: row.canonicalName,
-      description: row.description,
-      isAnimalDerived: row.isAnimalDerived,
-      isCommonAllergen: row.isCommonAllergen,
-      isControversial: row.isControversial,
-      isActive: row.isActive,
+      return this.repo.insertIngredient({
+        name: row.name,
+        slug: row.slug,
+        inciName: row.inciName,
+        categoryId,
+        canonicalName: row.canonicalName,
+        description: row.description,
+        isAnimalDerived: row.isAnimalDerived,
+        isCommonAllergen: row.isCommonAllergen,
+        isControversial: row.isControversial,
+        isActive: row.isActive,
+      });
     });
   }
 
