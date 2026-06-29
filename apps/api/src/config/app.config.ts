@@ -86,7 +86,10 @@ export class AppConfig {
   @IsNotEmpty()
   DATABASE_URL: string | undefined;
 
-  @Transform(({ value }) => value === 'true' || value === true)
+  @Transform(({ value }) => {
+    if (typeof value === 'string') return value.toLowerCase() === 'true';
+    return value === true;
+  })
   @IsBoolean()
   DATABASE_SSL: boolean = true;
 
@@ -150,7 +153,10 @@ export class AppConfig {
 
   /* ============ Observability ============ */
 
-  @Transform(({ value }) => value === 'true' || value === true)
+  @Transform(({ value }) => {
+    if (typeof value === 'string') return value.toLowerCase() === 'true';
+    return value === true;
+  })
   @IsBoolean()
   OTEL_ENABLED: boolean = false;
 
@@ -188,9 +194,7 @@ export function resolveEnvFile(): string {
  * transformed (and now strongly-typed) instance on success.
  */
 export function validateAppConfig(env: Record<string, unknown>): AppConfig {
-  const validated = plainToInstance(AppConfig, env, {
-    enableImplicitConversion: true,
-  });
+  const validated = plainToInstance(AppConfig, env);
   const errors = validateSync(validated, {
     skipMissingProperties: false,
     forbidUnknownValues: false,

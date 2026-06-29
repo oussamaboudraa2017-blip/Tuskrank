@@ -1,5 +1,5 @@
 import { TIMEOUT_MS_KEY, TimeoutInterceptor } from './timeout.interceptor';
-import { of, throwError } from 'rxjs';
+import { of, from, throwError } from 'rxjs';
 import { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
@@ -17,25 +17,25 @@ const makeCtx = (): AnyCtx =>
       getResponse: () => ({}),
       getNext: () => ({}),
     }),
+    getHandler: () => undefined,
+    getClass: () => undefined,
   }) as unknown as AnyCtx;
 
 describe('TimeoutInterceptor', () => {
   it('uses reflector-provided timeout', async () => {
-    const interceptor = new TimeoutInterceptor(mockedReflector({ [TIMEOUT_MS_KEY]: 25 }));
-    const handle = (async () => {
-      await new Promise((r) => setTimeout(r, 80));
-      return 1;
-    })();
-    const obs = interceptor.intercept(makeCtx(), { handle: () => handle as never });
+    const interceptor = new TimeoutInterceptor(mockedReflector({ [TIMEOUT_MS_KEY]: 150 }));
+    const obs = interceptor.intercept(makeCtx(), {
+      handle: () => from(new Promise<number>((r) => setTimeout(() => r(1), 500))),
+    });
     await expect(new Promise<unknown>((resolve, reject) => {
       obs.subscribe({ next: resolve, error: reject });
-    })).rejects.toThrow(/Request exceeded 25ms/);
+    })).rejects.toThrow(/Request exceeded 150ms/);
   });
 
   it('falls back to default when no decorator is set', async () => {
     const interceptor = new TimeoutInterceptor(mockedReflector({}));
     const obs = interceptor.intercept(makeCtx(), {
-      handle: () => Promise.resolve(1) as never,
+      handle: () => of(1),
     });
     await new Promise<void>((resolve, reject) => {
       obs.subscribe({ next: () => resolve(), error: reject });

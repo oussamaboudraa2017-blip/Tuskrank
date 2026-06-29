@@ -45,13 +45,19 @@ import { APP_CONSTANTS } from './constants/app.constants';
     }),
   ],
   providers: [
+    SupabaseAuthGuard,
+    RolesGuard,
+    RequestLoggingInterceptor,
+    TimeoutInterceptor,
+    EnvelopeInterceptor,
+    GlobalExceptionFilter,
     {
       provide: APP_FILTER,
-      useClass: GlobalExceptionFilter,
+      useExisting: GlobalExceptionFilter,
     },
     {
       provide: APP_GUARD,
-      useClass: SupabaseAuthGuard,
+      useExisting: SupabaseAuthGuard,
     },
     {
       provide: APP_GUARD,
@@ -59,19 +65,19 @@ import { APP_CONSTANTS } from './constants/app.constants';
     },
     {
       provide: APP_INTERCEPTOR,
-      useClass: RequestLoggingInterceptor,
+      useExisting: RequestLoggingInterceptor,
     },
     {
       provide: APP_INTERCEPTOR,
-      useClass: TimeoutInterceptor,
+      useExisting: TimeoutInterceptor,
     },
     {
       provide: APP_INTERCEPTOR,
-      useClass: EnvelopeInterceptor,
+      useExisting: EnvelopeInterceptor,
     },
     {
       provide: APP_GUARD,
-      useClass: RolesGuard,
+      useExisting: RolesGuard,
     },
   ],
   exports: [

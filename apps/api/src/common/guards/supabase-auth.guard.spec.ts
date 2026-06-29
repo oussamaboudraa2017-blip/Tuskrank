@@ -1,8 +1,10 @@
 import { SupabaseAuthGuard } from './supabase-auth.guard';
+import { PUBLIC_KEY } from '../decorators';
 
 class FakeReflector {
+  constructor(private readonly publicOverride: boolean = false) {}
   getAllAndOverride<T>(key: string): T | undefined {
-    if (key === 'auth:public') return true as unknown as T;
+    if (key === PUBLIC_KEY && this.publicOverride) return true as unknown as T;
     return undefined;
   }
 }
@@ -24,15 +26,17 @@ class FakeLogger {
 }
 
 class FakeAuthClient {
-  async getUser() {
-    return { data: { user: null }, error: { message: 'no token' } };
-  }
+  auth = {
+    async getUser() {
+      return { data: { user: null }, error: { message: 'no token' } };
+    },
+  };
 }
 
 describe('SupabaseAuthGuard (extraction only)', () => {
   it('skips verification when @Public() metadata is present', async () => {
     const guard = new SupabaseAuthGuard(
-      new FakeReflector() as any,
+      new FakeReflector(true) as any,
       new FakeConfig() as any,
       new FakeLogger() as any,
     );
@@ -46,7 +50,7 @@ describe('SupabaseAuthGuard (extraction only)', () => {
 
   it('extracts bearer token from Authorization header', async () => {
     const guard = new SupabaseAuthGuard(
-      new FakeReflector() as any,
+      new FakeReflector(false) as any,
       new FakeConfig() as any,
       new FakeLogger() as any,
     );
@@ -65,7 +69,7 @@ describe('SupabaseAuthGuard (extraction only)', () => {
 
   it('extracts token from cookie when header absent', async () => {
     const guard = new SupabaseAuthGuard(
-      new FakeReflector() as any,
+      new FakeReflector(false) as any,
       new FakeConfig() as any,
       new FakeLogger() as any,
     );

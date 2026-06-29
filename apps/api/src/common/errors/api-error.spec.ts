@@ -13,13 +13,13 @@ describe('toApiErrorPayload', () => {
     const err = new Error('boom');
     const payload = toApiErrorPayload(err);
     expect(payload.code).toBe('INTERNAL_ERROR');
-    expect(payload.message).toBe('boom');
+    expect(payload.message).toBe('Internal server error');
   });
 
   it('handles non-Error throws', () => {
     const payload = toApiErrorPayload('bad');
     expect(payload.code).toBe('INTERNAL_ERROR');
-    expect(payload.message).toBe('Internal error');
+    expect(payload.message).toBe('Internal server error');
     expect(payload.details).toEqual({ cause: 'bad' });
   });
 

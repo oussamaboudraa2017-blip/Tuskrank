@@ -8,7 +8,7 @@
 ## Current Sprint
 
 **Sprint:** `MVP Audit & Production Hardening`
-**Status:** ✅ P0 Phase 1 Complete (Backend Hardening)
+**Status:** ✅ P0 Phase 1.6 Complete (Manual Verification)
 **Closed by:** Backend engineer
 
 **Previous sprints:**
@@ -38,6 +38,7 @@
 |------|--------|-------|
 | P0 Phase 1 (Backend Hardening) | ✅ Complete | Auth bypass, timeouts, RolesGuard, search_vector, trigram indexes, scoring auth |
 | P0 Phase 1.5 (TypeScript Compilation) | ✅ Complete | 245 → 0 production TS errors (3 test file errors remain — supertest types) |
+| P0 Phase 1.6 (Manual Verification) | ✅ Complete | `npm run build` ✅, `npm test` 20/20 ✅, `npm run start:dev` boots on :4000 ✅ |
 | P0 Phase 2 (Frontend) | ⏳ Pending | Next.js 15 app, packages, pages |
 | P0 Phase 3 (SEO & A11y) | ⏳ Pending | Metadata, JSON-LD, sitemap, WCAG 2.1 AA |
 | P0 Phase 4 (Deployment) | ⏳ Partial | Dockerfile fixed, deploy workflow created |
