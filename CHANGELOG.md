@@ -36,7 +36,347 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### In Progress
 
-- _Nothing yet. Sprint 2C has not started._
+- _Nothing yet. Sprint 2G is complete._
+
+---
+
+## [0.9.0] — 2026-06-29 — Sprint 2G: Scoring Engine
+
+### Added
+
+- **Scoring Module (`modules/scoring/`)** — modular, configurable product scoring engine using Strategy Pattern.
+
+- **Scoring Engine (`engine/scoring.engine.ts`)**:
+  - `ScoringEngine` class composes 7 `ScoringStrategy` implementations with configurable weights.
+  - `score()` runs all strategies, computes weighted overall score, derives grade, collects warnings and recommendations.
+  - `resolveWeights()` normalizes user-provided weight overrides to sum to 1.0.
+  - `computeConfidence()` aggregates per-category confidence into overall confidence.
+  - `scoreToGrade()` maps numeric score (0–100) to letter grade (A+ through F) via configurable boundaries.
+
+- **7 Scoring Strategies (`strategies/`)**:
+  - `IngredientQualityStrategy` (35%) — ingredient count, protein source, safety scores, diversity.
+  - `TransparencyStrategy` (20%) — naming specificity, brand transparency, certifications.
+  - `NutritionalBalanceStrategy` (15%) — protein, fat, fiber, moisture, ash, kcal levels vs AAFCO minimums.
+  - `ProcessingLevelStrategy` (10%) — food form, processing indicators, named meat vs meal.
+  - `ScientificEvidenceStrategy` (10%) — reference count, evidence type, source diversity.
+  - `ControversialIngredientsStrategy` (5%) — fillers, artificial colors/preservatives, sweeteners.
+  - `LabelTransparencyStrategy` (5%) — guaranteed analysis, ingredient list, certifications.
+  - All strategies implement `ScoringStrategy` interface with `score()`, `getWarnings()`, `getRecommendations()`.
+
+- **Scoring Repository (`repositories/scoring.repository.ts`)**:
+  - `getProductScoringInput()` — fetches all product data needed by strategies (ingredients, nutrition, brand, claims, tags, scientific references, certifications) via 8 SQL queries.
+  - `getProductIdsForBulk()` — fetches active, published product IDs for batch scoring.
+  - `saveProductScore()` — upserts to `product_scores` (invalidates old, inserts new current).
+  - `saveScoreHistory()` — appends to `score_history` (append-only audit trail).
+  - `getCurrentScore()` — reads current score from `product_scores`.
+
+- **Scoring Service (`scoring.service.ts`)**:
+  - `scoreProduct()` — fetch data, run engine, persist results, return `ScoringResult`.
+  - `bulkScore()` — score multiple products with per-product error handling.
+  - `scoreAll()` — score all active, published products (for scheduled jobs).
+  - `previewScore()` — compute score without persisting (dry-run/preview).
+  - `getCurrentScore()` — read current score from DB (no recomputation).
+
+- **Scoring Controller (`scoring.controller.ts`)**:
+  - `POST /api/v1/scoring/score` — score a single product (`@Public()`).
+  - `POST /api/v1/scoring/bulk` — score multiple products (`@Public()`).
+  - `POST /api/v1/scoring/preview` — preview score without persistence (`@Public()`).
+  - `GET /api/v1/scoring/current?productId=X` — get current score from DB (`@Public()`).
+  - All endpoints return `okResponse(data)`.
+
+- **Scoring DTOs (`dto/`)**:
+  - `ScoreProductDto` — product UUID + optional weight overrides (class-validator validated).
+  - `BulkScoreDto` — array of product UUIDs + optional weights (max 50).
+  - `ScoringResultDto` — complete score wire shape with categories, warnings, recommendations.
+  - `CurrentScoreDto` — DB-cached score shape.
+  - `BulkScoreResultDto` — per-product success/failure results.
+
+- **Scoring Types (`types/`)**:
+  - `CategoryScore` — per-category score, confidence, reasoning, data points.
+  - `ScoringResult` — complete result with overall score, grade, categories, warnings, recommendations, confidence.
+  - `ProductScoringInput` — raw product data for strategies (ingredients, nutrition, brand, claims, references).
+  - `ScoringConfig` — runtime weight overrides, version, reasoning toggle.
+  - `ScoringWarning` — flagged concern with category, severity, code, message.
+  - `ScoringRecommendation` — actionable improvement with priority, code, message, estimated impact.
+
+- **Scoring Enums (`enums/`)**:
+  - `ScoringCategory` — 7 categories (IngredientQuality, Transparency, NutritionalBalance, ProcessingLevel, ScientificEvidence, ControversialIngredients, LabelTransparency).
+  - `ScoreGrade` — A+ through F.
+  - `WarningSeverity` — info, low, medium, high, critical.
+  - `ScoringVersion` — algorithm version tracking.
+  - `ScoreTrigger` — manual, scheduled, data_change, import, seed.
+
+- **Scoring Constants (`constants/`)**:
+  - `DEFAULT_SCORING_WEIGHTS` — default category weights (keyed by `ScoringCategory`).
+  - `SCORING_BOUNDS` — min/max scores, max warnings/recommendations, bulk size limit.
+  - `GRADE_BOUNDARIES` — score-to-grade mapping.
+
+- **Scoring Errors (`errors/`)**:
+  - `ScoringError`, `ProductNotScorableError`, `InsufficientDataError`, `InvalidWeightConfigError`.
+
+- **AppModule** updated to import `ScoringModule`.
+
+- **Documentation**:
+  - `docs/scoring_engine.md` — architecture, scoring flow, strategy pattern, weight system, grade boundaries, API endpoints, database tables, future extensions (ML, AI, veterinary, country-specific).
+
+---
+
+## [0.8.0] — 2026-06-29 — Sprint 2F: Search Infrastructure Enhancement
+
+### Added
+
+- **Search Module (`modules/search/`)** — enhanced with multi-signal ranking, slug lookup, popular searches, and architecture abstractions for future backend swap.
+
+- **Ranking Engine (`ranking/ranking.engine.ts`)**:
+  - `RankingEngine` class composes multiple `RankingStrategy` implementations into a final score.
+  - Default strategies: `FullTextRanking` (0.35), `TrigramRanking` (0.20), `EntityScoreRanking` (0.20), `KeywordRanking` (0.15), `RecencyRanking` (0.05), `PopularityRanking` (0.05).
+  - `buildContext()` computes normalization context (max scores, max timestamps) from raw rows.
+  - `scoreRow()` applies weighted scoring with automatic normalization.
+  - `rankRows()` scores and sorts a result set in one call.
+  - `RankingEngine.createDefault()` factory for the standard strategy set.
+
+- **Search Enums (`enums/`)**:
+  - `SearchEntityType` — `Product`, `Brand`, `Ingredient`.
+  - `SearchStrategy` — `FullText`, `Trigram`, `Exact`, `Prefix`, `Keyword`, `Slug`, `Synonym`.
+  - `RankingSignal` — `FullText`, `Trigram`, `EntityScore`, `Recency`, `Popularity`, `Keyword`.
+
+- **Search Interfaces (`interfaces/`)**:
+  - `SearchProvider` — repository contract for the search module (enables ES/Meilisearch swap).
+  - `RankingStrategy` — signal scoring contract with `signal` and `score()` method.
+  - `RankingContext` — normalization context for cross-signal scoring.
+
+- **Search Constants (`constants/`)**:
+  - `SEARCH_BOUNDS` — all numeric limits (query length, pagination, trigram threshold, synonym depth).
+  - `DEFAULT_RANKING_WEIGHTS` — per-signal weights (keyed by `RankingSignal`).
+  - `SEARCH_RANKING_WEIGHTS` — camelCase alias used by the service layer.
+  - `SEARCH_ANALYTICS` — trending window, popular threshold, retention days.
+
+- **Search Types (`types/`)**:
+  - `SearchResultItem`, `SearchResult`, `GlobalSearchResult`, `AutocompleteSuggestion`, `TrendingSearch`, `PopularSearch`.
+
+- **Search Repository** — enhanced with:
+  - `findBySlug(entityType, slug)` — exact slug lookup across entity types.
+  - `getPopularSearches(limit)` — popular queries from `popular_searches` view.
+  - `updated_at` included in search results for recency ranking.
+  - All queries maintain `$1`-bound parameter safety.
+
+- **Search Service** — enhanced with:
+  - `findBySlug(entityType, slug)` — delegates to repository slug lookup.
+  - `getPopularSearches(limit)` — delegates to repository popular searches.
+  - Synonym expansion hook (placeholder for production `search_synonyms` integration).
+  - Deduplication by `(entityType, id)` keeping highest-scored result.
+
+- **Search Controller** — enhanced with:
+  - `GET /api/v1/search/lookup/:type/:slug` — slug-based entity lookup (`@Public()`).
+  - `GET /api/v1/search/popular` — popular searches (`@Public()`).
+  - Total of 9 public endpoints.
+
+- **AppModule** — already wired (no changes needed; SearchModule was imported in Sprint 3).
+
+### Changed
+
+- **Search Repository** — updated `searchProducts`, `searchBrands`, `searchIngredients` to include `updated_at` in result rows for recency ranking support.
+
+### Architecture Notes
+
+- `SearchProvider` interface allows swapping PostgreSQL FTS for Elasticsearch/Meilisearch without touching the service or controller layer.
+- `RankingEngine` is stateless and composable — new signals can be added by implementing `RankingStrategy`.
+- Weight tuning requires no migration — change `DEFAULT_RANKING_WEIGHTS` in `constants/search.constants.ts`.
+- Typo tolerance is prepared via trigram similarity (pg_trgm) with configurable `trigramMinSimilarity` threshold.
+- Popularity ranking is wired but uses `search_count` from `popular_searches` view (data populates after search logging accumulates).
+
+---
+
+## [0.7.0] — 2026-06-29 — Sprint 2E: Data Platform Foundation
+
+### Added
+
+- **Import Module (`modules/import/`)**:
+  - Six-stage import pipeline: Parse → Validate → Normalize → Deduplicate → Save → Generate Report.
+  - Supports CSV and JSON file formats with robust parsing (quoted fields, escaped quotes, boolean coercion).
+  - Entity-specific validators for Products, Brands, and Ingredients with field-level error reporting.
+  - Reusable normalization utilities: `slugify()`, `normalizeBrandName()`, `normalizeCanonicalName()`, `normalizeUpc()`, `normalizeCountryCode()`, `normalizeUrl()`, `normalizeList()`, `normalizeNumeric()`, `normalizeBoolean()`, `parsePackageSizeToGrams()`.
+  - Raw-to-domain mappers for Brands, Products, and Ingredients.
+  - Deduplication strategies: Skip, Overwrite, Merge.
+  - Batch DB writes with UPSERT (`ON CONFLICT ... DO UPDATE`) for idempotent imports.
+  - Foreign key resolution: brand_name → brand_id, food_form → food_form_id, protein_source → protein_source_id, etc.
+  - Auto-creation of brands during product import when brand doesn't exist.
+  - Nutrition profile and nutrient value import (kcal, protein, fat, fiber, ash, omega-3/6, calcium, phosphorus).
+  - Product image import with primary flag.
+  - Product targeting import (pet types, life stages, breed sizes).
+  - Product claims and tags import.
+  - Import job tracking (in-memory, PostgreSQL-backed in Sprint 5+).
+  - Import report generation with per-row status, error details, and timing.
+
+- **Import Repository (`import.repository.ts`)**:
+  - Extends `BaseRepository` from `@database`.
+  - Lookup methods for all FK resolution (brands, ingredients, food_forms, protein_sources, pet_types, life_stages, breed_sizes, categories, claims, tags, nutrients).
+  - Batch insert methods with UPSERT for brands, products, ingredients.
+  - Relationship insert methods for product_ingredients, product_targeting, product_claims, product_tags, product_images, nutrition_profiles, product_nutrients.
+
+- **Import Controller (`import.controller.ts`)**:
+  - `POST /api/v1/import` — run import pipeline (`@Roles('admin')`).
+  - `GET /api/v1/import/jobs` — list all jobs (`@Roles('admin')`).
+  - `GET /api/v1/import/jobs/:jobId` — get job detail (`@Roles('admin')`).
+  - `GET /api/v1/import/jobs/:jobId/report` — get import report (`@Roles('admin')`).
+
+- **Import Templates**:
+  - `templates/products.csv` — 4 sample products with 28 columns.
+  - `templates/brands.csv` — 8 sample brands with 7 columns.
+  - `templates/ingredients.csv` — 14 sample ingredients with 9 columns.
+
+- **Normalization Utilities (`normalizers/normalizer.ts`)**:
+  - `slugify()` — URL-safe slug generation (matches database `fn_generate_slug()` behavior).
+  - `normalizeText()` — trim, collapse whitespace, lowercase.
+  - `normalizeBrandName()` — title-case brand names.
+  - `normalizeIngredientName()` — title-case ingredient names.
+  - `normalizeCanonicalName()` — lowercase for deduplication matching.
+  - `normalizeUpc()` — strip spaces and dashes from UPC codes.
+  - `normalizeCountryCode()` — uppercase ISO-3166 alpha-2 codes.
+  - `normalizeUrl()` — trim and lowercase protocol/host.
+  - `normalizePackageSizeLabel()` — trim and collapse whitespace.
+  - `parsePackageSizeToGrams()` — convert "5 lb", "2.5 kg", "16 oz" to grams.
+  - `normalizeList()` — split comma/pipe/semicolon-separated strings.
+  - `normalizeNumeric()` — parse number strings with comma handling.
+  - `normalizeBoolean()` — coerce "yes"/"no"/"true"/"false"/"1"/"0" to boolean.
+
+- **AppModule** updated to import `ImportModule`.
+
+- **Documentation**:
+  - `docs/data_platform.md` — architecture, import flow, validation, normalization, future scaling.
+
+---
+
+## [0.6.0] — 2026-06-29 — Sprint 2D: Brands Module
+
+### Added
+
+- **Brands Module (`modules/brands/`)**:
+  - Full CRUD for brands with lifecycle transitions (activate/deactivate/soft-delete/restore).
+  - Featured brands endpoint (top brands ranked by product count + score).
+  - Search by name or manufacturer with country code filtering.
+  - Brand detail view with aggregated stats (product count, average scores, open recall count).
+  - Soft-delete blocked when brand has associated products.
+  - All endpoints return the global `{ success, data, meta }` envelope.
+
+- **Brands Repository (`brands.repository.ts`)**:
+  - Extends `BaseRepository` from `@database`.
+  - Full CRUD: `findById`, `findBySlug`, `findMany`, `count`, `create`, `update`, `softDelete`, `restore`.
+  - Featured: `findFeatured` (top brands by product count + score).
+  - Product count: `countProducts` (guards soft-delete).
+  - Existence checks: `exists`, `existsBySlug`.
+  - Enriched base query with LEFT JOINs for product count, average scores (overall, quality, safety, nutrition, transparency), and open recall count.
+  - Dynamic WHERE builder with parameterized `$N` placeholders.
+  - Sort field map with NULLS LAST for score sorting.
+
+- **Brands Service (`brands.service.ts`)**:
+  - Business orchestration layer (ONLY layer that calls repository).
+  - Slug uniqueness validation on create/update.
+  - Soft-delete guard (blocks if products exist).
+  - Lifecycle transitions with state validation.
+  - `buildQueryFromDto()` helper for controller-to-domain query conversion.
+
+- **Brands Controller (`brands.controller.ts`)**:
+  - `GET /api/v1/brands` — paginated list (`@Public()`).
+  - `GET /api/v1/brands/featured` — top brands (`@Public()`).
+  - `GET /api/v1/brands/search` — search (`@Public()`).
+  - `GET /api/v1/brands/:slug` — detail (`@Public()`).
+  - `POST /api/v1/brands` — create (`@Roles('admin')`, `201`).
+  - `PUT /api/v1/brands/:brandId` — full update (`@Roles('admin')`).
+  - `PATCH /api/v1/brands/:brandId` — partial update (`@Roles('admin')`).
+  - `POST /api/v1/brands/:brandId/activate|deactivate|soft-delete|restore` — lifecycle (`@Roles('admin')`).
+
+- **Brands DTOs (`dto/brand.dto.ts`)**:
+  - `ListBrandsQueryDto`, `SearchBrandsQueryDto`, `CreateBrandDto`, `UpdateBrandDto`, `PatchBrandDto` (all `class-validator` validated).
+
+- **Brands Domain Layer**:
+  - Enums: `BrandSortField`, `SortOrder`.
+  - Constants: `BRAND_BOUNDS`, `BRAND_SLUG_RE`, `BRAND_COUNTRY_CODE_RE`, `BRAND_DEFAULTS`.
+  - Types: `Brand`, `BrandSummary`, `BrandWithStats`.
+  - Errors: `BrandNotFoundError`, `BrandSlugCollisionError`, `BrandSoftDeletedError`, `BrandInactiveError`, `BrandInvalidLifecycleTransitionError`, `BrandHasProductsError`.
+  - Interfaces: `BrandQuery`, `BrandListFilters`, `BrandSort`, `BrandPagination`, `BrandSearchInput`.
+  - Validation: Zod schemas for `createBrandBody`, `updateBrandBody`, `patchBrandBody`, `brandSlugParam`, `brandListQuery`.
+  - Mapping: Pure functions `toBrand`, `toBrandSummary`, `toBrandWithStats`.
+
+- **AppModule** updated to import `BrandsModule`.
+
+- **Documentation**:
+  - `docs/brands_module.md` — module overview, endpoints, query parameters, database tables, relationships, business rules, future extensions.
+
+---
+
+## [0.5.0] — 2026-06-29 — Sprint 2C: Ingredients Module
+
+### Added
+
+- **Ingredients Module (`modules/ingredients/`)**:
+  - Full CRUD for ingredients, categories, and scores.
+  - Hierarchical category tree with self-referencing parent_id and cycle prevention.
+  - Ingredient scoring with grade (A-F +/-), reasoning, and versioned scoring.
+  - Related products lookup via `product_ingredients` junction table.
+  - Scientific reference management via `ingredient_references` + `scientific_references`.
+  - Lifecycle transitions: activate, deactivate, soft-delete, restore.
+  - Search by name, canonical_name, and inci_name with pagination and sorting.
+  - Filtering by category, animal-derived, allergen, controversial, and score range.
+  - All endpoints return the global `{ success, data, meta }` envelope.
+
+- **Ingredients Repository (`ingredients.repository.ts`)**:
+  - Extends `BaseRepository` from `@database`.
+  - Full CRUD: `findById`, `findBySlug`, `findMany`, `count`, `create`, `update`, `softDelete`, `restore`.
+  - Category CRUD: `findCategoryById`, `findCategoryBySlug`, `findCategories`, `createCategory`, `updateCategory`, `softDeleteCategory`.
+  - Score methods: `findCurrentScore`, `findScoreHistory`, `createScore`.
+  - Related data: `findRelatedProducts`, `findReferences`.
+  - Existence checks: `exists`, `existsBySlug`, `existsByCanonicalName`, `existsByCategorySlug`.
+  - Hierarchy helpers: `countCategoryChildren`, `countCategoryIngredients`, `getCategoryDepth`.
+  - Dynamic WHERE builder with parameterized `$N` placeholders.
+  - Sort field map with NULLS LAST for score sorting.
+
+- **Ingredients Service (`ingredients.service.ts`)**:
+  - Business orchestration layer (ONLY layer that calls repository).
+  - Slug uniqueness validation on create/update.
+  - Canonical name uniqueness validation.
+  - Category depth validation (max 3 levels).
+  - Category deletion guards (no children, no ingredients).
+  - Lifecycle transitions with state validation.
+  - `buildQueryFromDto()` helper for controller-to-domain query conversion.
+
+- **Ingredients Controller (`ingredients.controller.ts`)**:
+  - `GET /api/v1/ingredients` — paginated list (`@Public()`).
+  - `GET /api/v1/ingredients/search` — search (`@Public()`).
+  - `GET /api/v1/ingredients/:slug` — detail by slug (`@Public()`).
+  - `GET /api/v1/ingredients/:ingredientId/products` — related products (`@Public()`).
+  - `GET /api/v1/ingredients/:ingredientId/references` — scientific references (`@Public()`).
+  - `GET /api/v1/ingredients/:ingredientId/scores/history` — score history (`@Public()`).
+  - `GET /api/v1/ingredients/categories` — category tree (`@Public()`).
+  - `POST /api/v1/ingredients` — create (`@Roles('admin')`, `201`).
+  - `PATCH /api/v1/ingredients/:ingredientId` — update (`@Roles('admin')`).
+  - `POST /api/v1/ingredients/:ingredientId/activate` — activate (`@Roles('admin')`).
+  - `POST /api/v1/ingredients/:ingredientId/deactivate` — deactivate (`@Roles('admin')`).
+  - `POST /api/v1/ingredients/:ingredientId/soft-delete` — soft-delete (`@Roles('admin')`).
+  - `POST /api/v1/ingredients/:ingredientId/restore` — restore (`@Roles('admin')`).
+  - `POST /api/v1/ingredients/categories` — create category (`@Roles('admin')`, `201`).
+  - `PATCH /api/v1/ingredients/categories/:categoryId` — update category (`@Roles('admin')`).
+  - `POST /api/v1/ingredients/categories/:categoryId/soft-delete` — soft-delete category (`@Roles('admin')`).
+  - `POST /api/v1/ingredients/:ingredientId/scores` — create score (`@Roles('admin')`, `201`).
+
+- **Ingredients DTOs**:
+  - Input: `CreateIngredientDto`, `UpdateIngredientDto`, `ListIngredientsQueryDto`, `SearchIngredientsQueryDto`, `CreateCategoryDto`, `UpdateCategoryDto`, `CreateScoreDto`.
+  - Output: `IngredientDetailDto`, `IngredientListItemDto`, `IngredientCategoryDto`, `IngredientScoreDto`, `ProductIngredientEntryDto`, `IngredientReferenceDto`.
+
+- **Ingredients Domain Layer**:
+  - Enums: `IngredientSortField`, `SortOrder`, `IngredientLifecycleState`, `EvidenceType`.
+  - Constants: `INGREDIENT_BOUNDS` (all numeric limits), `INGREDIENT_SLUG_RE`, `INGREDIENT_DEFAULTS`.
+  - Types: `Ingredient`, `IngredientSummary`, `IngredientCategory`, `IngredientScore`, `IngredientCategoryTree`, `ProductIngredientEntry`, `IngredientReference`.
+  - Errors: 16 typed error classes extending `ApiError` (not found, collision, lifecycle, depth, etc.).
+  - Validation: Zod schemas for CRUD, pagination, sorting, filtering.
+  - Mapping: Pure mapper functions (`rowToIngredient`, `rowToSummary`, `rowToCategory`, `buildCategoryTree`, `rowToProductIngredientEntry`, `rowToReference`).
+
+- **Documentation**:
+  - `docs/ingredients_module.md` — full module architecture, endpoints, database tables, relationships, and future extensions.
+
+### Fixed
+
+- Pre-existing `@types`/`@database` path alias resolution errors in ingredients module (non-blocking, works at runtime via `tsconfig-paths`).
 
 ---
 

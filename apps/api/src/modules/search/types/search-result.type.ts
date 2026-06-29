@@ -1,4 +1,3 @@
-import type { Uuid } from '@types';
 import type { SearchEntityType } from '../enums';
 
 /**
@@ -10,7 +9,7 @@ import type { SearchEntityType } from '../enums';
  */
 export interface SearchResultItem {
   /** Entity UUID. */
-  readonly id: Uuid;
+  readonly id: string;
   /** Discriminator: product | brand | ingredient. */
   readonly entityType: SearchEntityType;
   /** Display name. */
@@ -83,4 +82,13 @@ export interface TrendingSearch {
   readonly normalized: string;
   readonly totalCount: number;
   readonly latestWindowEnd: Date;
+}
+
+/**
+ * Popular search shape.
+ */
+export interface PopularSearch {
+  readonly query: string;
+  readonly searchCount: number;
+  readonly lastSearchedAt: string;
 }

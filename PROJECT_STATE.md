@@ -7,11 +7,16 @@
 
 ## Current Sprint
 
-**Sprint:** `Sprint 3 — Search Infrastructure`
+**Sprint:** `Sprint 2G — Scoring Engine`
 **Status:** ✅ Complete
 **Closed by:** Backend engineer
 
 **Previous sprints:**
+- `Sprint 2F — Search Infrastructure Enhancement` ✅ Complete
+- `Sprint 2E — Data Platform Foundation` ✅ Complete
+- `Sprint 2D — Brands Module` ✅ Complete
+- `Sprint 2C — Ingredients Module` ✅ Complete
+- `Sprint 3 — Search Infrastructure` ✅ Complete
 - `Sprint 2B Task 3 — Products CRUD & Queries` ✅ Complete
 - `Sprint 2B Task 2 — Products Domain Layer` ✅ Complete
 - `Sprint 2B Task 1 — Products Module Skeleton` ✅ Complete
@@ -23,7 +28,7 @@
 
 ## Next Sprint
 
-**Sprint:** `Sprint 2C — Ingredients Module`
+**Sprint:** `Sprint 5 — Frontend Foundation`
 **Status:** ⏳ Not Started
 
 ---
@@ -44,8 +49,12 @@
 | [`database/ERD.md`](database/ERD.md) | ✅ | Mermaid ER diagram (Sprint 1.x.2). |
 | [`docs/products_module.md`](docs/products_module.md) | ✅ | Products module docs (Sprint 2B Task 1). |
 | [`docs/products_domain.md`](docs/products_domain.md) | ✅ | Products domain docs (Sprint 2B Task 2). |
-| [`docs/search_architecture.md`](docs/search_architecture.md) | ✅ | Search architecture docs (Sprint 3). |
-| API implementation | ✅ | Sprint 3: Search infrastructure complete. |
+| [`docs/search_architecture.md`](docs/search_architecture.md) | ✅ | Search architecture docs (Sprint 3 + enhanced Sprint 2F). |
+| [`docs/ingredients_module.md`](docs/ingredients_module.md) | ✅ | Ingredients module docs (Sprint 2C). |
+| [`docs/brands_module.md`](docs/brands_module.md) | ✅ | Brands module docs (Sprint 2D). |
+| [`docs/data_platform.md`](docs/data_platform.md) | ✅ | Data platform / import pipeline docs (Sprint 2E). |
+| [`docs/scoring_engine.md`](docs/scoring_engine.md) | ✅ | Scoring engine architecture, strategy pattern, weight system (Sprint 2G). |
+| API implementation | ✅ | Sprint 2G: Scoring engine infrastructure complete. |
 
 ---
 
@@ -57,9 +66,13 @@
 | Root config files   | ✅ Complete     | Sprint 0 delivered.                              |
 | AI Engineering OS   | ✅ Scaffolded   | Context, rules, prompts, system, reviews, outputs |
 | **Database**        | ✅ **Complete** | Sprint 1 / 1.x / 1.x.2 hardened                   |
-| **Backend (NestJS)**| ✅ **Complete (foundation + Products CRUD + Search)** | **Sprint 2A: scaffolding; Sprint 2B: Products module; Sprint 3: Search module** |
-| Backend business modules (Products etc.) | ✅ Products CRUD complete | Sprint 2B Task 3 done; Ingredients/Scoring next |
-| **Search**          | ✅ **Complete** | Sprint 3: PostgreSQL FTS + trigram, 7 endpoints, autocomplete, synonyms, trending |
+| **Backend (NestJS)**| ✅ **Complete (foundation + Products + Search + Ingredients + Brands + Import)** | **Sprint 2A-2E complete** |
+| Backend business modules | ✅ Products + Ingredients + Brands + Import complete | Scoring next |
+| **Search**          | ✅ **Enhanced** | Sprint 2F: Ranking engine, slug lookup, popular searches, 9 endpoints |
+| **Ingredients**     | ✅ **Complete** | Sprint 2C: CRUD, categories, scores, related products, 17 endpoints |
+| **Brands**          | ✅ **Complete** | Sprint 2D: CRUD, search, featured, lifecycle, 11 endpoints |
+| **Import**          | ✅ **Complete** | Sprint 2E: Pipeline, parsers, validators, normalizers, 4 endpoints |
+| **Scoring**         | ✅ **Complete** | Sprint 2G: Strategy Pattern, 7 categories, configurable weights, 4 endpoints |
 | Scoring             | ⏳ Not Started  | Sprint 4.                                        |
 | Frontend (web)      | ⏳ Not Started  | Sprint 5.                                        |
 | Admin               | ⏳ Not Started  | Sprint 6.                                        |
@@ -187,19 +200,65 @@
 - **`noUncheckedIndexedAccess` not yet enforced:** Deferred to a follow-up so it does not break the foundation before tests are in.
 - **`tsc --noEmit` shows pre-existing path alias errors:** `@types`, `@common`, `@database` modules can't resolve without `tsconfig-paths` at the `tsc` level. These work at runtime via NestJS + `tsconfig-paths`. Not blocking.
 
-## Definition of Done — Sprint 2B Task 3
+## Definition of Done — Sprint 2E
 
-- [x] `ProductsRepository` with full CRUD and child hydration implemented.
-- [x] `BrandsRepository` with read methods implemented.
-- [x] `ProductsService` with business validation and lifecycle transitions implemented.
-- [x] `ProductsController` with all REST endpoints implemented (`GET list`, `GET detail`, `POST create`, `PATCH update`, `POST publish/unpublish/soft-delete/restore`).
-- [x] `CreateProductDto`, `UpdateProductDto`, `ListProductsQueryDto` created with `class-validator`.
-- [x] All queries use `$1`-bound parameters (no raw SQL interpolation).
-- [x] Soft-deleted rows excluded by default; admin opt-in via flags.
+- [x] Import module structure created: `types/`, `constants/`, `enums/`, `errors/`, `parsers/`, `validators/`, `normalizers/`, `mappers/`, `jobs/`, `templates/`.
+- [x] CSV parser with quoted field support, escaped quotes, boolean coercion.
+- [x] JSON parser with array, wrapper key, and single object support.
+- [x] Row validators for Products, Brands, and Ingredients with field-level error reporting.
+- [x] Normalization utilities: `slugify()`, `normalizeBrandName()`, `normalizeCanonicalName()`, `normalizeUpc()`, `normalizeCountryCode()`, `normalizeUrl()`, `normalizeList()`, `normalizeNumeric()`, `normalizeBoolean()`, `parsePackageSizeToGrams()`.
+- [x] Raw-to-domain mappers for Brands, Products, and Ingredients.
+- [x] Import pipeline service: Parse → Validate → Normalize → Deduplicate → Save → Report.
+- [x] Import repository with FK resolution, batch inserts, and UPSERT.
+- [x] Import controller with 4 admin endpoints.
+- [x] Deduplication strategies: Skip, Overwrite, Merge.
+- [x] Import job tracking (in-memory).
+- [x] Import report generation with per-row status.
+- [x] Sample import templates: `products.csv`, `brands.csv`, `ingredients.csv`.
+- [x] `AppModule` updated to import `ImportModule`.
 - [x] `CHANGELOG.md` and `PROJECT_STATE.md` updated.
-- [x] `tsc --noEmit` clean for Sprint 2B code (pre-existing `@types` path alias errors only).
+- [x] `docs/data_platform.md` created.
+- [x] ESLint clean for `src/modules/import/**/*.ts`.
+
+## Definition of Done — Sprint 2F
+
+- [x] Search module structure enhanced: `enums/`, `interfaces/`, `ranking/`, `constants/`, `types/`.
+- [x] RankingEngine with 6 composable ranking strategies (FullText, Trigram, EntityScore, Keyword, Recency, Popularity).
+- [x] SearchStrategy enum with 7 strategy types.
+- [x] SearchProvider interface for future backend swap (ES/Meilisearch).
+- [x] RankingStrategy interface for custom signal implementations.
+- [x] Search repository enhanced with slug lookup and popular searches.
+- [x] Search service enhanced with deduplication and synonym expansion hook.
+- [x] Search controller enhanced with slug lookup and popular endpoints (9 total).
+- [x] Constants: SEARCH_BOUNDS, DEFAULT_RANKING_WEIGHTS, SEARCH_RANKING_WEIGHTS, SEARCH_ANALYTICS.
+- [x] Types: SearchResultItem, SearchResult, GlobalSearchResult, AutocompleteSuggestion, TrendingSearch, PopularSearch.
+- [x] `CHANGELOG.md` updated with [0.8.0] Sprint 2F entry.
+- [x] `PROJECT_STATE.md` updated with Sprint 2F state.
+- [x] No breaking changes to existing endpoints.
 
 ---
 
-> After Sprint 2B Task 3, **stop**. The next sprint begins only on explicit instruction.
+## Definition of Done — Sprint 2G
+
+- [x] Scoring module structure created: `engine/`, `strategies/`, `repositories/`, `dto/`, `types/`, `enums/`, `constants/`, `interfaces/`, `errors/`.
+- [x] ScoringEngine with configurable weights and grade derivation.
+- [x] 7 scoring strategies implementing ScoringStrategy interface.
+- [x] ScoringStrategy interface for custom category implementations.
+- [x] Scoring repository with product data fetch, score persistence, bulk operations.
+- [x] Scoring service with score, bulk, preview, scoreAll, getCurrentScore.
+- [x] Scoring controller with 4 endpoints (score, bulk, preview, current).
+- [x] DTOs: ScoreProductDto, BulkScoreDto, ScoringResultDto, CurrentScoreDto, BulkScoreResultDto.
+- [x] Types: CategoryScore, ScoringResult, ScoringConfig, ProductScoringInput, ScoringWarning, ScoringRecommendation.
+- [x] Enums: ScoringCategory (7), ScoreGrade (13), WarningSeverity (5), ScoringVersion, ScoreTrigger.
+- [x] Constants: DEFAULT_SCORING_WEIGHTS, SCORING_BOUNDS, GRADE_BOUNDARIES.
+- [x] Errors: ScoringError, ProductNotScorableError, InsufficientDataError, InvalidWeightConfigError.
+- [x] `AppModule` updated to import `ScoringModule`.
+- [x] `CHANGELOG.md` updated with [0.9.0] Sprint 2G entry.
+- [x] `PROJECT_STATE.md` updated with Sprint 2G state.
+- [x] `docs/scoring_engine.md` created.
+- [x] TypeScript clean for scoring module (only pre-existing @database path alias errors).
+
+---
+
+> After Sprint 2G, **stop**. The next sprint begins only on explicit instruction.
 

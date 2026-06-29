@@ -1,9 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DatabaseService } from '@database';
-import type { Uuid } from '@types';
-import type { SearchResultItem } from './types';
+import { SearchResultItem, TrendingSearch } from './types';
 import { SearchEntityType } from './enums';
-import { SEARCH_BOUNDS } from './constants';
+import { SEARCH_BOUNDS, SEARCH_ANALYTICS } from './constants';
+import { RankingEngine } from './ranking';
 
 /**
  * Search repository — PostgreSQL full-text search implementation.
@@ -19,6 +19,7 @@ import { SEARCH_BOUNDS } from './constants';
 @Injectable()
 export class SearchRepository {
   private readonly logger = new Logger(SearchRepository.name);
+  private readonly rankingEngine = RankingEngine.createDefault();
 
   constructor(private readonly db: DatabaseService) {}
 
@@ -28,12 +29,6 @@ export class SearchRepository {
 
   /**
    * Search products using PostgreSQL full-text search + trigram similarity.
-   *
-   * Strategy:
-   *   1. FTS via `to_tsvector('english', p.name) @@ to_tsquery(...)`.
-   *   2. Trigram similarity via `similarity(p.name, $1)`.
-   *   3. Keyword table lookup via `search_keywords`.
-   *   Results are deduplicated and ranked by a composite score.
    */
   async searchProducts(
     query: string,
@@ -119,7 +114,8 @@ export class SearchRepository {
           ts_rank(to_tsvector('english', p.name), to_tsquery('english', $2)) * 0.5,
           similarity(p.name, $1) * 0.3,
           CASE WHEN sk.normalized % $1 THEN 0.2 ELSE 0 END
-        ) AS search_score
+        ) AS search_score,
+        p.updated_at
       FROM products p
       LEFT JOIN brands b ON b.id = p.brand_id
       LEFT JOIN product_scores ps ON ps.product_id = p.id AND ps.is_current = true AND ps.deleted_at IS NULL
@@ -137,7 +133,7 @@ export class SearchRepository {
       LIMIT $${idx++} OFFSET $${idx}
     `;
     const result = await this.db.query<{
-      id: Uuid;
+      id: string;
       entity_type: string;
       name: string;
       slug: string;
@@ -147,26 +143,22 @@ export class SearchRepository {
       grade: string | null;
       image_url: string | null;
       search_score: number;
+      updated_at: string;
     }>(searchSql, values);
 
-    const items: SearchResultItem[] = result.rows.map((r: {
-      id: Uuid; entity_type: string; name: string; slug: string;
-      brand_name: string | null; brand_slug: string | null;
-      overall_score: number | null; grade: string | null;
-      image_url: string | null; search_score: number;
-    }) => ({
-      id: r.id,
+    const items: SearchResultItem[] = result.rows.map((r: Record<string, unknown>) => ({
+      id: r.id as string,
       entityType: SearchEntityType.Product,
-      name: r.name,
-      slug: r.slug,
-      score: Math.min(1, Math.max(0, r.search_score)),
-      matchedBy: this.detectMatchStrategy(r.search_score, query, r.name),
+      name: r.name as string,
+      slug: r.slug as string,
+      score: Math.min(1, Math.max(0, Number(r.search_score ?? 0))),
+      matchedBy: this.detectMatchStrategy(Number(r.search_score ?? 0), query, r.name as string),
       snippet: null,
-      brandName: r.brand_name,
-      brandSlug: r.brand_slug,
-      overallScore: r.overall_score,
-      grade: r.grade,
-      imageUrl: r.image_url,
+      brandName: r.brand_name as string | null,
+      brandSlug: r.brand_slug as string | null,
+      overallScore: r.overall_score as number | null,
+      grade: r.grade as string | null,
+      imageUrl: r.image_url as string | null,
     }));
 
     return { items, total };
@@ -227,7 +219,8 @@ export class SearchRepository {
           similarity(b.name, $1) * 0.6,
           CASE WHEN b.name ILIKE '%' || $1 || '%' THEN 0.3 ELSE 0 END,
           CASE WHEN sk.normalized % $1 THEN 0.1 ELSE 0 END
-        ) AS search_score
+        ) AS search_score,
+        b.updated_at
       FROM brands b
       LEFT JOIN search_keywords sk ON sk.entity_id = b.id AND sk.entity_type = 'brand' AND sk.deleted_at IS NULL
       ${where}
@@ -240,7 +233,7 @@ export class SearchRepository {
       LIMIT $${idx++} OFFSET $${idx}
     `;
     const result = await this.db.query<{
-      id: Uuid;
+      id: string;
       entity_type: string;
       name: string;
       slug: string;
@@ -250,26 +243,22 @@ export class SearchRepository {
       grade: string | null;
       image_url: string | null;
       search_score: number;
+      updated_at: string;
     }>(searchSql, values);
 
-    const items: SearchResultItem[] = result.rows.map((r: {
-      id: Uuid; entity_type: string; name: string; slug: string;
-      brand_name: string | null; brand_slug: string | null;
-      overall_score: number | null; grade: string | null;
-      image_url: string | null; search_score: number;
-    }) => ({
-      id: r.id,
+    const items: SearchResultItem[] = result.rows.map((r: Record<string, unknown>) => ({
+      id: r.id as string,
       entityType: SearchEntityType.Brand,
-      name: r.name,
-      slug: r.slug,
-      score: Math.min(1, Math.max(0, r.search_score)),
+      name: r.name as string,
+      slug: r.slug as string,
+      score: Math.min(1, Math.max(0, Number(r.search_score ?? 0))),
       matchedBy: 'trigram',
       snippet: null,
       brandName: null,
       brandSlug: null,
       overallScore: null,
       grade: null,
-      imageUrl: r.image_url,
+      imageUrl: r.image_url as string | null,
     }));
 
     return { items, total };
@@ -330,7 +319,8 @@ export class SearchRepository {
           similarity(i.name, $1) * 0.6,
           CASE WHEN i.name ILIKE '%' || $1 || '%' THEN 0.3 ELSE 0 END,
           CASE WHEN sk.normalized % $1 THEN 0.1 ELSE 0 END
-        ) AS search_score
+        ) AS search_score,
+        i.updated_at
       FROM ingredients i
       LEFT JOIN search_keywords sk ON sk.entity_id = i.id AND sk.entity_type = 'ingredient' AND sk.deleted_at IS NULL
       ${where}
@@ -343,7 +333,7 @@ export class SearchRepository {
       LIMIT $${idx++} OFFSET $${idx}
     `;
     const result = await this.db.query<{
-      id: Uuid;
+      id: string;
       entity_type: string;
       name: string;
       slug: string;
@@ -353,26 +343,22 @@ export class SearchRepository {
       grade: string | null;
       image_url: string | null;
       search_score: number;
+      updated_at: string;
     }>(searchSql, values);
 
-    const items: SearchResultItem[] = result.rows.map((r: {
-      id: Uuid; entity_type: string; name: string; slug: string;
-      brand_name: string | null; brand_slug: string | null;
-      overall_score: number | null; grade: string | null;
-      image_url: string | null; search_score: number;
-    }) => ({
-      id: r.id,
+    const items: SearchResultItem[] = result.rows.map((r: Record<string, unknown>) => ({
+      id: r.id as string,
       entityType: SearchEntityType.Ingredient,
-      name: r.name,
-      slug: r.slug,
-      score: Math.min(1, Math.max(0, r.search_score)),
+      name: r.name as string,
+      slug: r.slug as string,
+      score: Math.min(1, Math.max(0, Number(r.search_score ?? 0))),
       matchedBy: 'trigram',
       snippet: null,
       brandName: null,
       brandSlug: null,
       overallScore: null,
       grade: null,
-      imageUrl: r.image_url,
+      imageUrl: r.image_url as string | null,
     }));
 
     return { items, total };
@@ -419,6 +405,60 @@ export class SearchRepository {
   }
 
   /* ================================================================
+   * Slug lookup
+   * ================================================================ */
+
+  /**
+   * Find an entity by its exact slug and type.
+   * Returns null if not found.
+   */
+  async findBySlug(
+    entityType: SearchEntityType,
+    slug: string,
+  ): Promise<SearchResultItem | null> {
+    const table = this.getTableForEntity(entityType);
+    const { rows } = await this.db.query<{
+      id: string;
+      name: string;
+      slug: string;
+      brand_name: string | null;
+      overall_score: number | null;
+      grade: string | null;
+      image_url: string | null;
+      updated_at: string;
+    }>(
+      `SELECT id, name, slug,
+              ${entityType === 'product' ? 'NULL::text AS brand_name' : 'NULL::text AS brand_name'},
+              ${entityType === 'product' ? 'NULL::numeric AS overall_score' : 'NULL::numeric AS overall_score'},
+              ${entityType === 'product' ? 'NULL::text AS grade' : 'NULL::text AS grade'},
+              ${entityType === 'product' ? 'NULL::text AS image_url' : 'NULL::text AS image_url'},
+              updated_at::text
+       FROM ${table}
+       WHERE slug = $1 AND deleted_at IS NULL
+       LIMIT 1`,
+      [slug],
+    );
+
+    if (rows.length === 0) return null;
+
+    const r = rows[0];
+    return {
+      id: r.id,
+      entityType,
+      name: r.name,
+      slug: r.slug,
+      score: 1.0,
+      matchedBy: 'slug',
+      snippet: null,
+      brandName: r.brand_name,
+      brandSlug: null,
+      overallScore: r.overall_score,
+      grade: r.grade,
+      imageUrl: r.image_url,
+    };
+  }
+
+  /* ================================================================
    * Autocomplete
    * ================================================================ */
 
@@ -459,7 +499,7 @@ export class SearchRepository {
         LIMIT $2
       `;
       const res = await this.db.query<{
-        id: Uuid; name: string; slug: string;
+        id: string; name: string; slug: string;
         brand_name: string | null; brand_slug: string | null;
         overall_score: number | null; grade: string | null; image_url: string | null;
       }>(sql, [prefix, limit]);
@@ -486,7 +526,7 @@ export class SearchRepository {
         LIMIT $2
       `;
       const res = await this.db.query<{
-        id: Uuid; name: string; slug: string; image_url: string | null;
+        id: string; name: string; slug: string; image_url: string | null;
       }>(sql, [prefix, limit]);
       for (const r of res.rows) {
         results.push({
@@ -511,7 +551,7 @@ export class SearchRepository {
         LIMIT $2
       `;
       const res = await this.db.query<{
-        id: Uuid; name: string; slug: string;
+        id: string; name: string; slug: string;
       }>(sql, [prefix, limit]);
       for (const r of res.rows) {
         results.push({
@@ -565,7 +605,7 @@ export class SearchRepository {
     limit?: number;
     locale?: string;
     windowHours?: number;
-  } = {}): Promise<ReadonlyArray<{ normalized: string; totalCount: number; latestWindowEnd: Date }>> {
+  } = {}): Promise<ReadonlyArray<TrendingSearch>> {
     const limit = options.limit ?? 20;
     const sql = `
       SELECT normalized, total_count, latest_window_end
@@ -586,6 +626,32 @@ export class SearchRepository {
     }));
   }
 
+  /**
+   * Get popular searches from the `popular_searches` view.
+   */
+  async getPopularSearches(
+    limit = 10,
+  ): Promise<ReadonlyArray<{ query: string; searchCount: number; lastSearchedAt: string }>> {
+    const sql = `
+      SELECT query, search_count, last_searched_at
+      FROM popular_searches
+      WHERE search_count >= $1
+      ORDER BY search_count DESC
+      LIMIT $2
+    `;
+    const result = await this.db.query<{
+      query: string;
+      search_count: number;
+      last_searched_at: string;
+    }>(sql, [SEARCH_ANALYTICS.popularSearchMinCount, limit]);
+
+    return result.rows.map((r: { query: string; search_count: number; last_searched_at: string }) => ({
+      query: r.query,
+      searchCount: r.search_count,
+      lastSearchedAt: r.last_searched_at,
+    }));
+  }
+
   /* ================================================================
    * Search logging
    * ================================================================ */
@@ -598,7 +664,7 @@ export class SearchRepository {
     raw: string;
     resultCount: number;
     latencyMs: number;
-    userId?: Uuid;
+    userId?: string;
     sessionId?: string;
     requestId?: string;
     ipAddress?: string;
@@ -626,6 +692,19 @@ export class SearchRepository {
   /* ================================================================
    * Private helpers
    * ================================================================ */
+
+  private getTableForEntity(entityType: SearchEntityType): string {
+    switch (entityType) {
+      case SearchEntityType.Product:
+        return 'products';
+      case SearchEntityType.Brand:
+        return 'brands';
+      case SearchEntityType.Ingredient:
+        return 'ingredients';
+      default:
+        return 'products';
+    }
+  }
 
   /**
    * Convert a user query to a tsquery string.

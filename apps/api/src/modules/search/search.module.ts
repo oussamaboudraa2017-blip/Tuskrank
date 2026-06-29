@@ -19,6 +19,8 @@ import { SearchRepository } from './search.repository';
  *   GET /api/v1/search/autocomplete
  *   GET /api/v1/search/synonyms/:term
  *   GET /api/v1/search/trending
+ *   GET /api/v1/search/popular
+ *   GET /api/v1/search/lookup/:type/:slug
  */
 @Module({
   imports: [DatabaseModule],

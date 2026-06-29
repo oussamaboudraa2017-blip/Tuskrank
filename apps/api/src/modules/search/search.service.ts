@@ -196,6 +196,24 @@ export class SearchService {
   }
 
   /* ================================================================
+   * Slug lookup
+   * ================================================================ */
+
+  /**
+   * Find an entity by its exact slug and type.
+   */
+  async findBySlug(
+    entityType: SearchEntityType,
+    slug: string,
+  ): Promise<SearchResultItem | null> {
+    if (!slug || slug.trim().length === 0) {
+      throw new Error('Slug is required');
+    }
+
+    return this.searchRepo.findBySlug(entityType, slug.trim());
+  }
+
+  /* ================================================================
    * Autocomplete
    * ================================================================ */
 
@@ -253,6 +271,19 @@ export class SearchService {
     windowHours?: number;
   } = {}): Promise<ReadonlyArray<TrendingSearch>> {
     return this.searchRepo.getTrending(params);
+  }
+
+  /* ================================================================
+   * Popular searches
+   * ================================================================ */
+
+  /**
+   * Get popular (frequently searched) queries.
+   */
+  async getPopularSearches(
+    limit = 10,
+  ): Promise<ReadonlyArray<{ query: string; searchCount: number; lastSearchedAt: string }>> {
+    return this.searchRepo.getPopularSearches(limit);
   }
 
   /* ================================================================

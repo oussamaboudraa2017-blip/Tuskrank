@@ -15,6 +15,7 @@ import {
 } from './dto';
 import { Public } from '@common/decorators';
 import { okResponse } from '@common/dto';
+import { SearchEntityType } from './enums';
 
 /**
  * Search controller — public search endpoints.
@@ -27,6 +28,8 @@ import { okResponse } from '@common/dto';
  *   GET /api/v1/search/autocomplete    — prefix autocomplete
  *   GET /api/v1/search/synonyms/:term  — synonym expansion
  *   GET /api/v1/search/trending        — trending searches
+ *   GET /api/v1/search/popular         — popular searches
+ *   GET /api/v1/search/lookup/:type/:slug — slug lookup
  */
 @ApiTags('search')
 @Controller({ path: 'search', version: '1' })
@@ -102,6 +105,25 @@ export class SearchController {
   }
 
   /* ================================================================
+   * Slug lookup
+   * ================================================================ */
+
+  @Get('lookup/:type/:slug')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Find an entity by its exact slug and type.' })
+  async findBySlug(
+    @Param('type') type: string,
+    @Param('slug') slug: string,
+  ) {
+    const result = await this.searchService.findBySlug(
+      type as SearchEntityType,
+      slug,
+    );
+    return okResponse(result);
+  }
+
+  /* ================================================================
    * Autocomplete
    * ================================================================ */
 
@@ -155,5 +177,18 @@ export class SearchController {
       locale,
     });
     return okResponse(trending);
+  }
+
+  /* ================================================================
+   * Popular
+   * ================================================================ */
+
+  @Get('popular')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get popular (frequently searched) terms.' })
+  async getPopular(@Query('limit') limit?: number) {
+    const popular = await this.searchService.getPopularSearches(limit);
+    return okResponse(popular);
   }
 }

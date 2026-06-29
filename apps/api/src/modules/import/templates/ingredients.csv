@@ -1,0 +1,15 @@
+name,inci_name,canonical_name,category,description,is_animal_derived,is_common_allergen,is_controversial,is_active
+Chicken Meal,Chicken Meal,chicken meal,animal-protein,Concentrated form of chicken with moisture removed. High-quality protein source.,true,false,false,true
+Beef Meal,Beef Meal,beef meal,animal-protein,Concentrated form of beef with moisture removed. Rich in amino acids.,true,false,false,true
+Brown Rice,Brown Rice,brown rice,carbohydrate,Whole grain carbohydrate source. Provides fiber and essential nutrients.,false,false,false,true
+Pea Protein,Pea Protein,pea protein,plant-protein,Plant-based protein concentrate derived from yellow peas.,false,false,true,true
+Salmon Meal,Salmon Meal,salmon meal,animal-protein,Concentrated salmon with moisture removed. Rich in omega-3 fatty acids.,true,false,false,true
+Sweet Potato,Sweet Potato,sweet potato,carbohydrate,Complex carbohydrate source rich in fiber vitamins and minerals.,false,false,false,true
+Chicken Fat,Chicken Fat,chicken fat,fat-and-oil,Poultry fat preserved with mixed tocopherols. Source of omega-6 fatty acids.,true,false,false,true
+Flaxseed,Flax Seed,flaxseed,fat-and-oil,Plant-based source of omega-3 alpha-linolenic acid (ALA).,false,false,false,true
+Dried Egg Product,Dried Egg Product,dried egg product,animal-protein,Whole egg product with moisture removed. Highly digestible protein source.,true,true,false,true
+Blueberries,Blueberries,blueberry,fruit,Whole blueberries. Natural source of antioxidants and vitamins.,false,false,false,true
+Fish Oil,Fish Oil,fish oil,fat-and-oil,Concentrated source of EPA and DHA omega-3 fatty acids.,true,false,false,true
+Calcium Carbonate,Calcium Carbonate,calcium carbonate,additive,Calcium supplement essential for bone and teeth health.,false,false,false,true
+Taurine,Taurine,taurine,additive,Essential amino acid for cats. Supports heart and eye health.,false,false,false,true
+Glucosamine Hydrochloride,Glucosamine HCl,glucosamine,additive,Amino sugar that supports joint health and cartilage maintenance.,false,false,false,true
