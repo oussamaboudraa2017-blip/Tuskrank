@@ -1,0 +1,26 @@
+# Build artefacts
+dist/
+node_modules/
+coverage/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Tests
+.nyc_output/
+
+# Docker
+Dockerfile.*
+docker-compose*.yml
