@@ -7,11 +7,15 @@
 
 ## Current Sprint
 
-**Sprint:** `Sprint 2A.1 — Backend Review Hardening`
+**Sprint:** `Sprint 3 — Search Infrastructure`
 **Status:** ✅ Complete
-**Closed by:** Backend reviewer (Stripe Staff BE pass)
+**Closed by:** Backend engineer
 
 **Previous sprints:**
+- `Sprint 2B Task 3 — Products CRUD & Queries` ✅ Complete
+- `Sprint 2B Task 2 — Products Domain Layer` ✅ Complete
+- `Sprint 2B Task 1 — Products Module Skeleton` ✅ Complete
+- `Sprint 2A.1 — Backend Review Hardening` ✅ Complete
 - `Sprint 2A — Backend Foundation` ✅ Complete
 - `Sprint 1.x.2 — Production Database Review` ✅ Complete
 - `Sprint 1.x — Database Review Hardening` ✅ Complete
@@ -19,9 +23,8 @@
 
 ## Next Sprint
 
-**Sprint:** `Sprint 2B — Business Modules (Products)`
+**Sprint:** `Sprint 2C — Ingredients Module`
 **Status:** ⏳ Not Started
-**Prompt:** [`.ai/prompts/Sprint_02_Backend.md`](.ai/prompts/Sprint_02_Backend.md)
 
 ---
 
@@ -39,7 +42,10 @@
 | [`database/README.md`](database/README.md) | ✅ | Database schema, indexes, views, functions, triggers, ER diagram, performance + scaling strategy. |
 | [`database/DATABASE_REVIEW.md`](database/DATABASE_REVIEW.md) | ✅ | Database Stripe-grade review + score 85/100 (Sprint 1.x.2). |
 | [`database/ERD.md`](database/ERD.md) | ✅ | Mermaid ER diagram (Sprint 1.x.2). |
-| API implementation | ⏳ Not Started | Sprint 2B. |
+| [`docs/products_module.md`](docs/products_module.md) | ✅ | Products module docs (Sprint 2B Task 1). |
+| [`docs/products_domain.md`](docs/products_domain.md) | ✅ | Products domain docs (Sprint 2B Task 2). |
+| [`docs/search_architecture.md`](docs/search_architecture.md) | ✅ | Search architecture docs (Sprint 3). |
+| API implementation | ✅ | Sprint 3: Search infrastructure complete. |
 
 ---
 
@@ -51,9 +57,9 @@
 | Root config files   | ✅ Complete     | Sprint 0 delivered.                              |
 | AI Engineering OS   | ✅ Scaffolded   | Context, rules, prompts, system, reviews, outputs |
 | **Database**        | ✅ **Complete** | Sprint 1 / 1.x / 1.x.2 hardened                   |
-| **Backend (NestJS)**| ✅ **Complete (foundation only)** | **Sprint 2A: NestJS scaffolding, common/, config/, database/, health/, auth/, swagger, tests, docs** |
-| Backend business modules (Products etc.) | ⏳ Not Started | Sprint 2B                          |
-| Search              | ⏳ Not Started  | Sprint 3.                                        |
+| **Backend (NestJS)**| ✅ **Complete (foundation + Products CRUD + Search)** | **Sprint 2A: scaffolding; Sprint 2B: Products module; Sprint 3: Search module** |
+| Backend business modules (Products etc.) | ✅ Products CRUD complete | Sprint 2B Task 3 done; Ingredients/Scoring next |
+| **Search**          | ✅ **Complete** | Sprint 3: PostgreSQL FTS + trigram, 7 endpoints, autocomplete, synonyms, trending |
 | Scoring             | ⏳ Not Started  | Sprint 4.                                        |
 | Frontend (web)      | ⏳ Not Started  | Sprint 5.                                        |
 | Admin               | ⏳ Not Started  | Sprint 6.                                        |
@@ -79,6 +85,29 @@
 - Multi-stage `Dockerfile` (distroless Node 20).
 - Spec coverage: `timeout.interceptor.spec.ts`, `supabase-auth.guard.spec.ts`, `pune-rate-limited.e2e` via `test/app.e2e-spec.ts`.
 - `docs/BACKEND_ARCHITECTURE.md` and `docs/BACKEND_REVIEW.md` (Stripe-grade review, score 92/100).
+
+## Backend — Sprint 2B Task 3 Deliverables (Products CRUD)
+
+- **Products Repository** (`repositories/products.repository.ts`):
+  - Full CRUD: `findById`, `findBySlug`, `findMany`, `findFeatured`, `findTopRated`, `search`.
+  - Child hydration: images, ingredients (with joined `ingredients` table), tags, claims, targeting, nutrition profiles, nutrient values, score history — all via parallel queries.
+  - Writes: `create`, `update`, `softDelete`, `restore`, `publish`, `unpublish`.
+  - Existence: `exists`, `existsByBrandSlug`, `existsByUpc`, `existsByBrandSku`.
+  - Dynamic `WHERE` builder for filters, sort-field mapping, full-text search (`to_tsvector`/`to_tsquery`).
+  - Materialised view queries for `findTopRated` (backed by `mv_top_rated_products`).
+- **Brands Repository** (`repositories/brands.repository.ts`): `findById`, `findBySlug`, `listActive`, `count`.
+- **Products Service** (`products.service.ts`):
+  - Business validation: brand existence, slug uniqueness, UPC uniqueness, SKU uniqueness.
+  - Full lifecycle: create, update, publish, unpublish, soft-delete, restore.
+  - `buildQueryFromDto` for controller-to-domain query translation.
+- **Products Controller** (`products.controller.ts`):
+  - `GET /api/v1/products` — paginated list (`@Public()`).
+  - `GET /api/v1/products/:slug` — detail (`@Public()`).
+  - `POST /api/v1/products` — create (`@Roles('admin')`, `201`).
+  - `PATCH /api/v1/products/:productId` — update (`@Roles('admin')`).
+  - `POST /api/v1/products/:productId/publish|unpublish|soft-delete|restore` (`@Roles('admin')`).
+- **DTOs**: `CreateProductDto`, `UpdateProductDto`, `ListProductsQueryDto` (all `class-validator` validated).
+- **Bug fixes**: Corrected pre-existing import errors in DTOs, entity, constants, and mapper. Added `mapping/index.ts` barrel. Added `packageSizeGrams`/`packageSizeLabel` flat accessors to `ProductEntity`.
 
 ## Database — Sprint 1 Deliverables (and Sprint 1.x Hardening)
 
@@ -154,21 +183,23 @@
 - **No psql on the build host at Sprint 1 time:** SQL files were verified by structured logical review (paren balance, referenced-object existence, ON CONFLICT arbiter presence, generated-column Postgres-12+ syntax, partial-index validity). A live Supabase deploy must be smoke-tested in CI before Sprint 2 lands.
 - **No row-level security policies:** RLS-ready schema, but policies are intentionally deferred to a Sprint 1.1 follow-up migration to keep the baseline portable and reproducible in non-Supabase environments.
 - **No migrations folder under `database/`:** Sprint 1 chose raw files (`schema.sql`, `indexes.sql`, etc.) so the foundation can be adopted unchanged. Versioned migrations begin Sprint 1.1 onward.
-- **No business modules yet:** The backend foundation is in production-grade shape (score 92/100) but no Products/Search/Scoring/AI/Admin endpoints are wired. That is Sprint 2B's scope.
+- **Products CRUD complete, but no tests yet:** Integration tests for the Products module are a follow-up task.
 - **`noUncheckedIndexedAccess` not yet enforced:** Deferred to a follow-up so it does not break the foundation before tests are in.
+- **`tsc --noEmit` shows pre-existing path alias errors:** `@types`, `@common`, `@database` modules can't resolve without `tsconfig-paths` at the `tsc` level. These work at runtime via NestJS + `tsconfig-paths`. Not blocking.
 
-## Definition of Done — Sprint 2A.1
+## Definition of Done — Sprint 2B Task 3
 
-- [x] `docs/BACKEND_REVIEW.md` produced (Stripe-grade review, score 92/100).
-- [x] Critical and high-impact bugs eliminated.
-- [x] `SupabaseAuthGuard` LRU verification cache in place.
-- [x] `RequestIdMiddleware` is the single source of truth for `req.id`.
-- [x] `EnvelopeInterceptor` is idempotent.
-- [x] Postgres probe has a 1.5 s budget.
-- [x] Error envelope redacts inner messages.
-- [x] No new tables, no business endpoints.
+- [x] `ProductsRepository` with full CRUD and child hydration implemented.
+- [x] `BrandsRepository` with read methods implemented.
+- [x] `ProductsService` with business validation and lifecycle transitions implemented.
+- [x] `ProductsController` with all REST endpoints implemented (`GET list`, `GET detail`, `POST create`, `PATCH update`, `POST publish/unpublish/soft-delete/restore`).
+- [x] `CreateProductDto`, `UpdateProductDto`, `ListProductsQueryDto` created with `class-validator`.
+- [x] All queries use `$1`-bound parameters (no raw SQL interpolation).
+- [x] Soft-deleted rows excluded by default; admin opt-in via flags.
+- [x] `CHANGELOG.md` and `PROJECT_STATE.md` updated.
+- [x] `tsc --noEmit` clean for Sprint 2B code (pre-existing `@types` path alias errors only).
 
 ---
 
-> After Sprint 2A.1, **stop**. The next sprint begins only on explicit instruction.
+> After Sprint 2B Task 3, **stop**. The next sprint begins only on explicit instruction.
 

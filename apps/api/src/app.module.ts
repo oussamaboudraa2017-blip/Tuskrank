@@ -4,6 +4,8 @@ import { CommonModule } from '@common';
 import { DatabaseModule } from '@database';
 import { AuthModule } from '@modules/auth';
 import { HealthModule } from '@modules/health';
+import { ProductsModule } from '@modules/products';
+import { SearchModule } from '@modules/search';
 
 /**
  * Top-level feature graph.
@@ -11,8 +13,11 @@ import { HealthModule } from '@modules/health';
  * `CommonModule` provides cross-cutting concerns
  * (logger, throttler, exception filter, interceptors, guards, middleware).
  *
- * Domain modules (Products, Search, Scoring, AI, Admin) land in
- * Sprints 2B+.
+ * Domain modules:
+ *   - AuthModule     (Sprint 2A)
+ *   - HealthModule   (Sprint 2A)
+ *   - ProductsModule (Sprint 2B)
+ *   - SearchModule   (Sprint 3)
  */
 @Module({
   imports: [
@@ -21,6 +26,8 @@ import { HealthModule } from '@modules/health';
     DatabaseModule,
     HealthModule,
     AuthModule,
+    ProductsModule,
+    SearchModule,
   ],
 })
 export class AppModule {}

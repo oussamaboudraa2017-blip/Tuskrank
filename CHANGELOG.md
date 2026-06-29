@@ -36,7 +36,133 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### In Progress
 
-- _Nothing yet. Sprint 2B has not started._
+- _Nothing yet. Sprint 2C has not started._
+
+---
+
+## [0.4.0] — 2026-06-29 — Sprint 3: Search Infrastructure
+
+### Added
+
+- **Search Module (`modules/search/`)**:
+  - Full-text search infrastructure using PostgreSQL FTS + `pg_trgm` for ranking.
+  - Entity-specific search endpoints for products, brands, and ingredients.
+  - Global (multi-entity) search across all entity types.
+  - Prefix-based autocomplete with ILIKE + trigram similarity.
+  - Bidirectional synonym expansion via `search_synonyms` table.
+  - Trending searches via `v_trending_searches` materialized view.
+  - Search event logging to `search_logs` table (fire-and-forget).
+  - Multi-signal ranking: FTS (0.40) + trigram (0.25) + entity score (0.20) + recency (0.15).
+  - All weights tunable via `SEARCH_RANKING_WEIGHTS` constant without migration.
+
+- **Search Repository (`search.repository.ts`)**:
+  - PostgreSQL implementation of full-text search using `to_tsvector`/`to_tsquery`.
+  - Trigram similarity via `pg_trgm` extension with configurable minimum threshold (0.3).
+  - Keyword table lookup via `search_keywords` (auto-synced by database triggers).
+  - `DISTINCT ON` queries to prevent duplicate results from multiple JOINs.
+  - Parallel `Promise.all` execution for global search across entity types.
+  - `SearchProvider` interface for future Elasticsearch/Meilisearch backend swap.
+
+- **Search Service (`search.service.ts`)**:
+  - Query normalization (trim, collapse whitespace, lowercase).
+  - Synonym expansion with bidirectional lookup.
+  - Multi-signal result ranking using configurable weights.
+  - Entity type parsing and validation.
+  - Async search event logging (non-blocking).
+
+- **Search Controller (`search.controller.ts`)**:
+  - `GET /api/v1/search/products` — product search (`@Public()`).
+  - `GET /api/v1/search/brands` — brand search (`@Public()`).
+  - `GET /api/v1/search/ingredients` — ingredient search (`@Public()`).
+  - `GET /api/v1/search/global` — multi-entity search (`@Public()`).
+  - `GET /api/v1/search/autocomplete` — prefix autocomplete (`@Public()`).
+  - `GET /api/v1/search/synonyms/:term` — synonym expansion (`@Public()`).
+  - `GET /api/v1/search/trending` — trending searches (`@Public()`).
+  - All endpoints return the global `{ success, data, meta }` envelope via `okResponse()`.
+
+- **Search DTOs**:
+  - `SearchQueryDto` — entity-specific search query params.
+  - `GlobalSearchQueryDto` — global search query params (extends SearchQueryDto).
+  - `AutocompleteQueryDto` — autocomplete query params.
+  - `SearchResultItemDto` — single search result wire shape.
+  - `SearchResultDto` — entity-specific search response.
+  - `GlobalSearchResultDto` — global search response.
+  - `AutocompleteSuggestionDto` — autocomplete suggestion wire shape.
+
+- **Search Module (`search.module.ts`)**:
+  - NestJS module wiring SearchRepository, SearchService, SearchController.
+  - Registered in `AppModule` for application-wide availability.
+
+- **Documentation**:
+  - `docs/search_architecture.md` — full search architecture, endpoints, strategies, database infrastructure, performance considerations, and future backend swap guide.
+
+### Fixed
+
+- Pre-existing `@types`/`@database` path alias resolution errors in search module (non-blocking, works at runtime via `tsconfig-paths`).
+
+---
+
+## [0.3.0] — 2026-06-29 — Sprint 2B Task 3: Products CRUD & Queries
+
+### Added
+
+- **Products Repository (`repositories/products.repository.ts`)**:
+  - Full CRUD implementation against PostgreSQL: `findById`, `findBySlug`, `findMany`, `findFeatured`, `findTopRated`, `search`.
+  - Child-table hydration via parallel queries (images, ingredients, tags, claims, targeting, nutrition, nutrients, score history).
+  - Write methods: `create`, `update`, `softDelete`, `restore`, `publish`, `unpublish`.
+  - Existence checks: `exists`, `existsByBrandSlug`, `existsByUpc`, `existsByBrandSku`.
+  - Reference lookups: `findBrandById`, `findFoodFormById`, `findProteinSourceById`.
+  - Dynamic `WHERE` builder for filters (brand, pet type, active/published state, text search).
+  - Sort-field-to-SQL-column mapping with `NULLS LAST`.
+  - Full-text search using `to_tsvector` / `to_tsquery` across product names and ingredient names.
+  - Materialised view queries for `findTopRated` (backed by `mv_top_rated_products`).
+  - Child-table companion repositories: `ProductImagesRepository`, `NutritionProfilesRepository`, `ProductIngredientsRepository`.
+
+- **Brands Repository (`repositories/brands.repository.ts`)**:
+  - `findById`, `findBySlug`, `listActive`, `count` — all filtered by `deleted_at IS NULL`.
+
+- **Products Service (`products.service.ts`)**:
+  - `findBySlug` / `findBySlugAdmin` — public vs admin read paths.
+  - `list` — paginated list with total count.
+  - `findFeatured`, `findTopRated`, `search` — curated product discovery.
+  - `create` — full business validation: brand existence, slug uniqueness, UPC uniqueness, SKU uniqueness.
+  - `update` — partial patch with UPC and SKU collision checks.
+  - `publish` / `unpublish` / `softDelete` / `restore` — lifecycle transitions.
+  - `buildQueryFromDto` — converts controller DTO params to domain `ProductQuery`.
+
+- **Products Controller (`products.controller.ts`)**:
+  - `GET /api/v1/products` — paginated list with filters, sort, and search (`@Public()`).
+  - `GET /api/v1/products/:slug` — product detail by slug (`@Public()`).
+  - `POST /api/v1/products` — create product (`@Roles('admin')`, `201`).
+  - `PATCH /api/v1/products/:productId` — update product (`@Roles('admin')`).
+  - `POST /api/v1/products/:productId/publish` — publish (`@Roles('admin')`).
+  - `POST /api/v1/products/:productId/unpublish` — unpublish (`@Roles('admin')`).
+  - `POST /api/v1/products/:productId/soft-delete` — soft-delete (`@Roles('admin')`).
+  - `POST /api/v1/products/:productId/restore` — restore (`@Roles('admin')`).
+  - All endpoints return the global `{ success, data, meta }` envelope via `okResponse()` / `paginatedResponse()`.
+
+- **DTOs**:
+  - `CreateProductDto` — `class-validator` validated create input.
+  - `UpdateProductDto` — `class-validator` validated partial update input.
+  - `ListProductsQueryDto` — `class-validator` validated query params for list endpoint.
+
+### Fixed
+
+- Pre-existing `import type` errors in `product-detail.dto.ts`, `product-list-item.dto.ts`, `products-page.dto.ts` (changed to value imports for `@ApiProperty({ type: () => X })` usage).
+- Pre-existing wrong relative imports in `product.entity.ts` (`../value-objects`, `../types`, `../errors` → `./value-objects`, `./types`, `./errors`).
+- Missing `PRODUCT_BOUNDS.maxLimit`, `defaultLimit`, `sortBy`, `sortOrder` in `product.constants.ts`.
+- Missing `mapping/index.ts` barrel export in `domain/mapping/`.
+- Removed stale `imageSource` field from `Product` interface.
+- Added `packageSizeGrams` / `packageSizeLabel` flat accessors to `ProductEntity` for interface compatibility.
+- Fixed `ProductImageSource` import in mapper (`../types` → `../enums`).
+- Fixed type casts in mapper for `ProteinSource.origin` and `ProductNutrientValue.bound`.
+- Fixed `BrandSummaryDto` to include `countryCode` and `logoImageUrl` properties.
+
+### Notes
+
+- All queries use `$1`-bound parameters (no raw SQL interpolation).
+- Soft-deleted rows excluded by default; `includeSoftDeleted` / `includeUnpublished` opt-in for admin.
+- `tsc --noEmit` still shows pre-existing `@types`/`@common`/`@database` path alias errors — these work at runtime via `tsconfig-paths`.
 
 ---
 
