@@ -1,0 +1,675 @@
+     1→import { Injectable } from '@nestjs/common';
+     2→import { BaseRepository } from '@database';
+     3→import type { Uuid } from '@types';
+     4→import type { PoolClient } from 'pg';
+     5→import type { ProductEntity as BaseEntity } from '../entities';
+     6→import type {
+     7→  ProductRow,
+     8→  ProductImageRow,
+     9→  ProductIngredientRow,
+    10→  ProductTagRow,
+    11→  ProductClaimRow,
+    12→  ProductTargetingRow,
+    13→  NutritionProfileRow,
+    14→  ProductNutrientValueRow,
+    15→  ScoreHistoryRow,
+    16→} from '../domain/mapping/product.db-model';
+    17→import type {
+    18→  ProductQuery,
+    19→  ProductSearchInput,
+    20→} from '../domain/interfaces/product-query.interface';
+    21→import {
+    22→  ProductSortField,
+    23→  SortOrder,
+    24→} from '../domain/enums/product.enums';
+    25→
+    26→const SORT_FIELD_MAP: Record<string, string> = {
+    27→  [ProductSortField.CreatedAt]: 'p.created_at',
+    28→  [ProductSortField.PublishedAt]: 'p.published_at',
+    29→  [ProductSortField.OverallScore]: 'COALESCE(ps.overall_score, 0)',
+    30→  [ProductSortField.Name]: 'p.name',
+    31→};
+    32→
+    33→const SORT_ORDER_MAP: Record<string, string> = {
+    34→  [SortOrder.Asc]: 'ASC',
+    35→  [SortOrder.Desc]: 'DESC',
+    36→};
+    37→
+    38→const PRODUCT_BASE_COLS = `
+    39→  p.id, p.brand_id, p.name, p.slug, p.description, p.upc, p.sku,
+    40→  p.package_size_grams, p.package_size_label,
+    41→  p.food_form_id, p.primary_protein_source_id,
+    42→  p.is_active, p.published_at, p.created_at, p.updated_at, p.deleted_at,
+    43→  b.name AS brand_name, b.slug AS brand_slug,
+    44→  b.manufacturer AS brand_manufacturer,
+    45→  b.country_code AS brand_country_code,
+    46→  b.website_url AS brand_website_url,
+    47→  b.description AS brand_description,
+    48→  b.logo_image_url AS brand_logo_image_url,
+    49→  b.is_active AS brand_is_active,
+    50→  ff.slug AS food_form_slug, ff.name AS food_form_name,
+    51→  ff.is_active AS food_form_is_active,
+    52→  ps.slug AS protein_source_slug, ps.name AS protein_source_name,
+    53→  ps.origin AS protein_source_origin, ps.is_active AS protein_source_is_current,
+    54→  ps2.id AS score_id, ps2.overall_score AS score_overall,
+    55→  ps2.quality_score AS score_quality, ps2.safety_score AS score_safety,
+    56→  ps2.nutrition_score AS score_nutrition, ps2.transparency_score AS score_transparency,
+    57→  ps2.scoring_version AS score_scoring_version, ps2.updated_at AS score_updated_at,
+    58→  ps2.is_current AS score_is_current
+    59→`;
+    60→
+    61→const PRODUCT_BASE_FROM = `
+    62→  FROM products p
+    63→  INNER JOIN brands b ON b.id = p.brand_id
+    64→  LEFT JOIN food_forms ff ON ff.id = p.food_form_id
+    65→  LEFT JOIN protein_sources ps ON ps.id = p.primary_protein_source_id
+    66→  LEFT JOIN product_scores ps2 ON ps2.product_id = p.id AND ps2.is_current = true AND ps2.deleted_at IS NULL
+    67→`;
+    68→
+    69→type ProductChildRows = {
+    70→  images: ProductImageRow[];
+    71→  ingredients: ProductIngredientRow[];
+    72→  tags: ProductTagRow[];
+    73→  claims: ProductClaimRow[];
+    74→  targeting: ProductTargetingRow[];
+    75→  nutritionProfiles: NutritionProfileRow[];
+    76→  nutrientValues: ProductNutrientValueRow[];
+    77→  scoreHistory: ScoreHistoryRow[];
+    78→};
+    79→
+    80→@Injectable()
+    81→export class ProductsReadRepository extends BaseRepository<BaseEntity> {
+    82→  protected override readonly tableName = 'products';
+    83→
+    84→  async findById(id: Uuid): Promise<ProductRow | null> {
+    85→    const result = await this.execute<ProductRow>(
+    86→      `SELECT ${PRODUCT_BASE_COLS} ${PRODUCT_BASE_FROM} WHERE p.id = $1 AND p.deleted_at IS NULL`,
+    87→      [id],
+    88→    );
+    89→    return result.rows[0] ?? null;
+    90→  }
+    91→
+    92→  async findBySlug(slug: string): Promise<ProductRow | null> {
+    93→    const result = await this.execute<ProductRow>(
+    94→      `SELECT ${PRODUCT_BASE_COLS} ${PRODUCT_BASE_FROM} WHERE p.slug = $1 AND p.deleted_at IS NULL`,
+    95→      [slug],
+    96→    );
+    97→    return result.rows[0] ?? null;
+    98→  }
+    99→
+   100→  async findMany(
+   101→    query: ProductQuery,
+   102→  ): Promise<{ rows: ProductRow[]; total: number }> {
+   103→    const { filters, sort, pagination } = query;
+   104→    const { conditions, values } = this.buildFilterConditions(filters);
+   105→    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+   106→
+   107→    const sortCol = SORT_FIELD_MAP[sort.by] ?? 'p.created_at';
+   108→    const sortDir = SORT_ORDER_MAP[sort.order] ?? 'DESC';
+   109→    const offset = (pagination.page - 1) * pagination.limit;
+   110→
+   111→    const countSql = `SELECT COUNT(*)::int AS total ${PRODUCT_BASE_FROM} ${where}`;
+   112→    const dataSql = `SELECT ${PRODUCT_BASE_COLS} ${PRODUCT_BASE_FROM} ${where} ORDER BY ${sortCol} ${sortDir} NULLS LAST LIMIT $${values.length + 1} OFFSET $${values.length + 2}`;
+   113→
+   114→    const [countResult, dataResult] = await Promise.all([
+   115→      this.execute<{ total: number }>(countSql, values),
+   116→      this.execute<ProductRow>(dataSql, [...values, pagination.limit, offset]),
+   117→    ]);
+   118→
+   119→    return {
+   120→      rows: dataResult.rows,
+   121→      total: countResult.rows[0]?.total ?? 0,
+   122→    };
+   123→  }
+   124→
+   125→  /** Cursor-based pagination — O(1) at scale, no OFFSET drift. */
+   126→  async findManyCursor(
+   127→    query: ProductQuery,
+   128→  ): Promise<{ rows: ProductRow[]; nextCursor: string | null; total: number }> {
+   129→    const { filters, sort, pagination } = query;
+   130→    const { conditions, values } = this.buildFilterConditions(filters);
+   131→    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+   132→
+   133→    const sortCol = SORT_FIELD_MAP[sort.by] ?? 'p.created_at';
+   134→    const sortDir = sort.order === SortOrder.Asc ? 'ASC' : 'DESC';
+   135→    const sortOp = sortDir === 'ASC' ? '>' : '<';
+   136→    const limit = Math.min(pagination.limit, 100);
+   137→
+   138→    const countSql = `SELECT COUNT(*)::int AS total ${PRODUCT_BASE_FROM} ${where}`;
+   139→    let dataSql: string;
+   140→    let dataValues: unknown[];
+   141→
+   142→    if (query.cursor) {
+   143→      const decoded = this.decodeCursor(query.cursor);
+   144→      if (decoded) {
+   145→        const sortField = sortCol === 'p.created_at' ? 'p.created_at' : sortCol;
+   146→        dataSql = `SELECT ${PRODUCT_BASE_COLS} ${PRODUCT_BASE_FROM} ${where} AND (${sortField}, p.id) ${sortOp} ($1::timestamptz, $2::uuid) ORDER BY ${sortField} ${sortDir}, p.id ${sortDir} LIMIT $3`;
+   147→        dataValues = [new Date(decoded.sortValue).toISOString(), decoded.id, limit];
+   148→      } else {
+   149→        dataSql = `SELECT ${PRODUCT_BASE_COLS} ${PRODUCT_BASE_FROM} ${where} ORDER BY ${sortCol} ${sortDir}, p.id ${sortDir} LIMIT $${values.length + 1}`;
+   150→        dataValues = [...values, limit];
+   151→      }
+   152→    } else {
+   153→      dataSql = `SELECT ${PRODUCT_BASE_COLS} ${PRODUCT_BASE_FROM} ${where} ORDER BY ${sortCol} ${sortDir}, p.id ${sortDir} LIMIT $${values.length + 1}`;
+   154→      dataValues = [...values, limit];
+   155→    }
+   156→
+   157→    const [countResult, dataResult] = await Promise.all([
+   158→      this.execute<{ total: number }>(countSql, values),
+   159→      this.execute<ProductRow>(dataSql, dataValues),
+   160→    ]);
+   161→
+   162→    const rows = dataResult.rows;
+   163→    const lastRow = rows[rows.length - 1];
+   164→    const nextCursor = rows.length === limit
+   165→      ? this.encodeCursor(lastRow.id, (lastRow as unknown as Record<string, unknown>)[sortCol === 'p.created_at' ? 'created_at' : sortCol])
+   166→      : null;
+   167→
+   168→    return {
+   169→      rows,
+   170→      nextCursor,
+   171→      total: countResult.rows[0]?.total ?? 0,
+   172→    };
+   173→  }
+   174→
+   175→  private decodeCursor(cursor: string): { id: Uuid; sortValue: string } | null {
+   176→    try {
+   177→      const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+   178→      if (typeof decoded.id === 'string' && typeof decoded.sv === 'string') {
+   179→        return { id: decoded.id as Uuid, sortValue: decoded.sv };
+   180→      }
+   181→      return null;
+   182→    } catch {
+   183→      return null;
+   184→    }
+   185→  }
+   186→
+   187→  private encodeCursor(id: Uuid, sortValue: unknown): string {
+   188→    return Buffer.from(JSON.stringify({ id, sv: String(sortValue) })).toString('base64url');
+   189→  }
+   190→
+   191→  async findFeatured(
+   192→    pagination: { page: number; limit: number },
+   193→    options?: { petType?: string },
+   194→  ): Promise<ProductRow[]> {
+   195→    const conditions: string[] = [
+   196→      'p.deleted_at IS NULL',
+   197→      'p.is_active = true',
+   198→      'p.published_at IS NOT NULL',
+   199→      'ps2.is_current = true',
+   200→    ];
+   201→    const values: unknown[] = [];
+   202→
+   203→    if (options?.petType) {
+   204→      values.push(options.petType);
+   205→      conditions.push(
+   206→        `EXISTS (SELECT 1 FROM product_targeting pt
+   207→          JOIN pet_types pt2 ON pt2.id = pt.pet_type_id
+   208→          WHERE pt.product_id = p.id AND pt2.slug = $${values.length} AND pt.is_active = true)`,
+   209→      );
+   210→    }
+   211→
+   212→    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+   213→    const offset = (pagination.page - 1) * pagination.limit;
+   214→
+   215→    const sql = `SELECT ${PRODUCT_BASE_COLS} ${PRODUCT_BASE_FROM} ${where} ORDER BY ps2.overall_score DESC NULLS LAST, p.published_at DESC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`;
+   216→    const result = await this.execute<ProductRow>(sql, [...values, pagination.limit, offset]);
+   217→    return result.rows;
+   218→  }
+   219→
+   220→  async countByBrand(brandId: Uuid): Promise<number> {
+   221→    const result = await this.execute<{ total: number }>(
+   222→      `SELECT COUNT(*)::int AS total FROM products WHERE brand_id = $1 AND deleted_at IS NULL`,
+   223→      [brandId],
+   224→    );
+   225→    return result.rows[0]?.total ?? 0;
+   226→  }
+   227→
+   228→  /* ================================================================
+   229→   * Existence checks
+   230→   * ================================================================ */
+   231→
+   232→  async existsByBrandSlug(brandId: Uuid, slug: string, excludeId?: Uuid): Promise<boolean> {
+   233→    let sql = 'SELECT 1 FROM products WHERE brand_id = $1 AND slug = $2 AND deleted_at IS NULL';
+   234→    const values: unknown[] = [brandId, slug];
+   235→    if (excludeId) {
+   236→      values.push(excludeId);
+   237→      sql += ` AND id != $${values.length}`;
+   238→    }
+   239→    const result = await this.execute(sql, values);
+   240→    return result.rowCount === 1;
+   241→  }
+   242→
+   243→  async existsByUpc(upc: string, excludeId?: Uuid): Promise<boolean> {
+   244→    let sql = 'SELECT 1 FROM products WHERE upc = $1 AND deleted_at IS NULL';
+   245→    const values: unknown[] = [upc];
+   246→    if (excludeId) {
+   247→      values.push(excludeId);
+   248→      sql += ` AND id != $${values.length}`;
+   249→    }
+   250→    const result = await this.execute(sql, values);
+   251→    return result.rowCount === 1;
+   252→  }
+   253→
+   254→  async existsByBrandSku(brandId: Uuid, sku: string, excludeId?: Uuid): Promise<boolean> {
+   255→    let sql = 'SELECT 1 FROM products WHERE brand_id = $1 AND sku = $2 AND deleted_at IS NULL';
+   256→    const values: unknown[] = [brandId, sku];
+   257→    if (excludeId) {
+   258→      values.push(excludeId);
+   259→      sql += ` AND id != $${values.length}`;
+   260→    }
+   261→    const result = await this.execute(sql, values);
+   262→    return result.rowCount === 1;
+   263→  }
+   264→
+   265→  /** Batch hydrate children for multiple products — eliminates N+1. */
+   266→  async batchHydrate(rows: ProductRow[]): Promise<ProductRow[]> {
+   267→    if (rows.length === 0) return rows;
+   268→    const ids = rows.map((r) => r.id);
+   269→
+   270→    const children = await Promise.all([
+   271→      this.batchFind<ProductImageRow>('product_images', 'product_id', ids, 'ORDER BY sort_order'),
+   272→      this.batchFindIngredients(ids),
+   273→      this.batchFindTags(ids),
+   274→      this.batchFindClaims(ids),
+   275→      this.batchFind<ProductTargetingRow>('product_targeting', 'product_id', ids, 'AND is_active = true'),
+   276→      this.batchFind<NutritionProfileRow>('nutrition_profiles', 'product_id', ids, 'ORDER BY effective_from DESC'),
+   277→      this.batchFind<ProductNutrientValueRow>('product_nutrients', 'product_id', ids),
+   278→      this.batchFindScoreHistory(ids),
+   279→    ]);
+   280→
+   281→    const grouped = children.map(
+   282→      (childRows) => this.groupByProductId(childRows as { product_id: Uuid }[]),
+   283→    );
+   284→
+   285→    for (const row of rows) {
+   286→      const mutableRow = row as unknown as Record<string, unknown>;
+   287→      mutableRow.images = this.getForProduct(grouped[0] as Map<Uuid, ProductImageRow[]>, row.id);
+   288→      mutableRow.ingredient_panel = this.getForProduct(grouped[1] as Map<Uuid, ProductIngredientRow[]>, row.id);
+   289→      mutableRow.tags = this.getForProduct(grouped[2] as Map<Uuid, ProductTagRow[]>, row.id);
+   290→      mutableRow.claims = this.getForProduct(grouped[3] as Map<Uuid, ProductClaimRow[]>, row.id);
+   291→      mutableRow.targeting = this.getForProduct(grouped[4] as Map<Uuid, ProductTargetingRow[]>, row.id);
+   292→      mutableRow.nutrition_profiles = this.getForProduct(grouped[5] as Map<Uuid, NutritionProfileRow[]>, row.id);
+   293→      mutableRow.nutrient_values = this.getForProduct(grouped[6] as Map<Uuid, ProductNutrientValueRow[]>, row.id);
+   294→      mutableRow.score_history = this.getForProduct(grouped[7] as Map<Uuid, ScoreHistoryRow[]>, row.id);
+   295→    }
+   296→
+   297→    return rows;
+   298→  }
+   299→
+   300→  async hydrateSingle(row: ProductRow): Promise<ProductRow> {
+   301→    return (await this.batchHydrate([row]))[0];
+   302→  }
+   303→
+   304→  private async batchFind<R extends { product_id: Uuid }>(
+   305→    table: string,
+   306→    fkColumn: string,
+   307→    ids: Uuid[],
+   308→    extraSql = '',
+   309→  ): Promise<R[]> {
+   310→    if (ids.length === 0) return [];
+   311→    const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ');
+   312→    const result = await this.execute<R>(
+   313→      `SELECT * FROM ${this.table(table)} WHERE ${this.col(fkColumn)} IN (${placeholders}) AND deleted_at IS NULL ${extraSql}`,
+   314→      ids,
+   315→    );
+   316→    return result.rows;
+   317→  }
+   318→
+   319→  private async batchFindIngredients(ids: Uuid[]): Promise<ProductIngredientRow[]> {
+   320→    if (ids.length === 0) return [];
+   321→    const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ');
+   322→    const result = await this.execute<ProductIngredientRow>(
+   323→      `SELECT pi.*, i.slug AS ingredient_slug, i.name AS ingredient_name,
+   324→              i.current_score AS ingredient_current_score, i.current_grade AS ingredient_current_grade,
+   325→              i.is_controversial AS ingredient_is_controversial,
+   326→              i.is_common_allergen AS ingredient_is_common_allergen,
+   327→              i.is_animal_derived AS ingredient_is_animal_derived
+   328→       FROM product_ingredients pi
+   329→       INNER JOIN ingredients i ON i.id = pi.ingredient_id
+   330→       WHERE pi.product_id IN (${placeholders}) AND pi.deleted_at IS NULL
+   331→       ORDER BY pi.position`,
+   332→      ids,
+   333→    );
+   334→    return result.rows;
+   335→  }
+   336→
+   337→  private async batchFindTags(ids: Uuid[]): Promise<ProductTagRow[]> {
+   338→    if (ids.length === 0) return [];
+   339→    const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ');
+   340→    const result = await this.execute<ProductTagRow>(
+   341→      `SELECT pt.id, pt.product_id, pt.tag_id, t.slug AS tag_slug, t.name AS tag_name
+   342→       FROM product_tags pt
+   343→       INNER JOIN tags t ON t.id = pt.tag_id
+   344→       WHERE pt.product_id IN (${placeholders}) AND pt.deleted_at IS NULL`,
+   345→      ids,
+   346→    );
+   347→    return result.rows;
+   348→  }
+   349→
+   350→  private async batchFindClaims(ids: Uuid[]): Promise<ProductClaimRow[]> {
+   351→    if (ids.length === 0) return [];
+   352→    const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ');
+   353→    const result = await this.execute<ProductClaimRow>(
+   354→      `SELECT pc.id, pc.product_id, pc.claim_id, c.slug AS claim_slug, c.name AS claim_name,
+   355→              pc.evidence_note
+   356→       FROM product_claims pc
+   357→       INNER JOIN claims c ON c.id = pc.claim_id
+   358→       WHERE pc.product_id IN (${placeholders}) AND pc.deleted_at IS NULL`,
+   359→      ids,
+   360→    );
+   361→    return result.rows;
+   362→  }
+   363→
+   364→  private async batchFindScoreHistory(ids: Uuid[]): Promise<ScoreHistoryRow[]> {
+   365→    if (ids.length === 0) return [];
+   366→    const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ');
+   367→    const result = await this.execute<ScoreHistoryRow>(
+   368→      `SELECT * FROM score_history WHERE product_id IN (${placeholders}) ORDER BY computed_at DESC LIMIT 10`,
+   369→      ids,
+   370→    );
+   371→    return result.rows;
+   372→  }
+   373→
+   374→  private groupByProductId<T extends { product_id: Uuid }>(rows: T[]): Map<Uuid, T[]> {
+   375→    const map = new Map<Uuid, T[]>();
+   376→    for (const row of rows) {
+   377→      const existing = map.get(row.product_id);
+   378→      if (existing) {
+   379→        existing.push(row);
+   380→      } else {
+   381→        map.set(row.product_id, [row]);
+   382→      }
+   383→    }
+   384→    return map;
+   385→  }
+   386→
+   387→  private getForProduct<T>(map: Map<Uuid, T[]>, productId: Uuid): T[] {
+   388→    return map.get(productId) ?? [];
+   389→  }
+   390→
+   391→  private buildFilterConditions(filters: {
+   392→    q?: string;
+   393→    brandId?: Uuid;
+   394→    isActive?: boolean;
+   395→    isPublished?: boolean;
+   396→  }): { conditions: string[]; values: unknown[] } {
+   397→    const conditions: string[] = [];
+   398→    const values: unknown[] = [];
+   399→    let idx = 1;
+   400→
+   401→    conditions.push('p.deleted_at IS NULL');
+   402→
+   403→    if (filters.isActive !== undefined) {
+   404→      conditions.push(`p.is_active = $${idx++}`);
+   405→      values.push(filters.isActive);
+   406→    }
+   407→    if (filters.isPublished !== undefined) {
+   408→      conditions.push(filters.isPublished ? 'p.published_at IS NOT NULL' : 'p.published_at IS NULL');
+   409→    }
+   410→    if (filters.brandId) {
+   411→      conditions.push(`p.brand_id = $${idx++}`);
+   412→      values.push(filters.brandId);
+   413→    }
+   414→    if (filters.q) {
+   415→      conditions.push(`p.name ILIKE $${idx++}`);
+   416→      values.push(`%${filters.q}%`);
+   417→    }
+   418→
+   419→    return { conditions, values };
+   420→  }
+   421→}
+   422→
+   423→/* ================================================================
+   424→ * ProductsWriteRepository — mutations only
+   425→ * ================================================================ */
+   426→
+   427→@Injectable()
+   428→export class ProductsWriteRepository extends BaseRepository<BaseEntity> {
+   429→  protected override readonly tableName = 'products';
+   430→
+   431→  async create(
+   432→    input: {
+   433→      brandId: Uuid;
+   434→      name: string;
+   435→      slug: string;
+   436→      description?: string | null;
+   437→      upc?: string | null;
+   438→      sku?: string | null;
+   439→      packageSizeGrams?: number | null;
+   440→      packageSizeLabel?: string | null;
+   441→      foodFormId?: Uuid | null;
+   442→      primaryProteinSourceId?: Uuid | null;
+   443→      isActive?: boolean;
+   444→    },
+   445→    client?: PoolClient,
+   446→  ): Promise<ProductRow> {
+   447→    const result = client
+   448→      ? await client.query<ProductRow>(
+   449→          `INSERT INTO products (brand_id, name, slug, description, upc, sku,
+   450→            package_size_grams, package_size_label, food_form_id, primary_protein_source_id, is_active)
+   451→           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+   452→          [input.brandId, input.name, input.slug, input.description ?? null,
+   453→           input.upc ?? null, input.sku ?? null, input.packageSizeGrams ?? null,
+   454→           input.packageSizeLabel ?? null, input.foodFormId ?? null,
+   455→           input.primaryProteinSourceId ?? null, input.isActive ?? true],
+   456→        )
+   457→      : await this.execute<ProductRow>(
+   458→          `INSERT INTO products (brand_id, name, slug, description, upc, sku,
+   459→            package_size_grams, package_size_label, food_form_id, primary_protein_source_id, is_active)
+   460→           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+   461→          [input.brandId, input.name, input.slug, input.description ?? null,
+   462→           input.upc ?? null, input.sku ?? null, input.packageSizeGrams ?? null,
+   463→           input.packageSizeLabel ?? null, input.foodFormId ?? null,
+   464→           input.primaryProteinSourceId ?? null, input.isActive ?? true],
+   465→        );
+   466→    return result.rows[0];
+   467→  }
+   468→
+   469→  async update(
+   470→    productId: Uuid,
+   471→    patch: {
+   472→      name?: string;
+   473→      description?: string | null;
+   474→      upc?: string | null;
+   475→      sku?: string | null;
+   476→      packageSizeGrams?: number | null;
+   477→      packageSizeLabel?: string | null;
+   478→      foodFormId?: Uuid | null;
+   479→      primaryProteinSourceId?: Uuid | null;
+   480→      isActive?: boolean;
+   481→    },
+   482→    client?: PoolClient,
+   483→  ): Promise<void> {
+   484→    const setClauses: string[] = [];
+   485→    const values: unknown[] = [];
+   486→    let idx = 1;
+   487→
+   488→    const fields: [string, unknown][] = [
+   489→      ['name', patch.name],
+   490→      ['description', patch.description],
+   491→      ['upc', patch.upc],
+   492→      ['sku', patch.sku],
+   493→      ['package_size_grams', patch.packageSizeGrams],
+   494→      ['package_size_label', patch.packageSizeLabel],
+   495→      ['food_form_id', patch.foodFormId],
+   496→      ['primary_protein_source_id', patch.primaryProteinSourceId],
+   497→      ['is_active', patch.isActive],
+   498→    ];
+   499→
+   500→    for (const [col, val] of fields) {
+   501→      if (val !== undefined) {
+   502→        setClauses.push(`${this.col(col)} = $${idx++}`);
+   503→        values.push(val);
+   504→      }
+   505→    }
+   506→
+   507→    if (setClauses.length === 0) return;
+   508→    setClauses.push('updated_at = NOW()');
+   509→    values.push(productId);
+   510→
+   511→    const sql = `UPDATE products SET ${setClauses.join(', ')} WHERE id = $${idx} AND deleted_at IS NULL`;
+   512→
+   513→    if (client) {
+   514→      await client.query(sql, values);
+   515→    } else {
+   516→      await this.execute(sql, values);
+   517→    }
+   518→  }
+   519→
+   520→  async softDelete(productId: Uuid, client?: PoolClient): Promise<void> {
+   521→    const sql = `UPDATE products SET deleted_at = NOW(), is_active = false, updated_at = NOW() WHERE id = $1 AND deleted_at IS NULL`;
+   522→    if (client) {
+   523→      await client.query(sql, [productId]);
+   524→    } else {
+   525→      await this.execute(sql, [productId]);
+   526→    }
+   527→  }
+   528→
+   529→  async restore(productId: Uuid, client?: PoolClient): Promise<void> {
+   530→    const sql = `UPDATE products SET deleted_at = NULL, updated_at = NOW() WHERE id = $1 AND deleted_at IS NOT NULL`;
+   531→    if (client) {
+   532→      await client.query(sql, [productId]);
+   533→    } else {
+   534→      await this.execute(sql, [productId]);
+   535→    }
+   536→  }
+   537→
+   538→  async publish(productId: Uuid, publishedAt?: Date, client?: PoolClient): Promise<void> {
+   539→    const ts = (publishedAt ?? new Date()).toISOString();
+   540→    const sql = `UPDATE products SET published_at = $1, is_active = true, updated_at = NOW() WHERE id = $2 AND deleted_at IS NULL`;
+   541→    if (client) {
+   542→      await client.query(sql, [ts, productId]);
+   543→    } else {
+   544→      await this.execute(sql, [ts, productId]);
+   545→    }
+   546→  }
+   547→
+   548→  async unpublish(productId: Uuid, client?: PoolClient): Promise<void> {
+   549→    const sql = `UPDATE products SET published_at = NULL, updated_at = NOW() WHERE id = $1 AND deleted_at IS NULL`;
+   550→    if (client) {
+   551→      await client.query(sql, [productId]);
+   552→    } else {
+   553→      await this.execute(sql, [productId]);
+   554→    }
+   555→  }
+   556→}
+   557→
+   558→/* ================================================================
+   559→ * ProductsSearchRepository — search queries only
+   560→ * ================================================================ */
+   561→
+   562→@Injectable()
+   563→export class ProductsSearchRepository extends BaseRepository<BaseEntity> {
+   564→  protected override readonly tableName = 'products';
+   565→
+   566→  async search(input: ProductSearchInput): Promise<ProductRow[]> {
+   567→    const conditions: string[] = [
+   568→      'p.deleted_at IS NULL',
+   569→      'p.published_at IS NOT NULL',
+   570→      `(to_tsvector('english', p.name) @@ to_tsquery('english', $1)
+   571→        OR EXISTS (
+   572→          SELECT 1 FROM product_ingredients pi
+   573→          JOIN ingredients i ON i.id = pi.ingredient_id
+   574→          WHERE pi.product_id = p.id
+   575→            AND to_tsvector('english', i.name) @@ to_tsquery('english', $1)
+   576→        ))`,
+   577→    ];
+   578→    const values: unknown[] = [this.toTsQuery(input.q)];
+   579→
+   580→    if (input.brandId) {
+   581→      values.push(input.brandId);
+   582→      conditions.push(`p.brand_id = $${values.length}`);
+   583→    }
+   584→    if (input.petType) {
+   585→      values.push(input.petType);
+   586→      conditions.push(
+   587→        `EXISTS (SELECT 1 FROM product_targeting pt
+   588→          JOIN pet_types pt2 ON pt2.id = pt.pet_type_id
+   589→          WHERE pt.product_id = p.id AND pt2.slug = $${values.length} AND pt.is_active = true)`,
+   590→      );
+   591→    }
+   592→    if (input.foodForm) {
+   593→      values.push(input.foodForm);
+   594→      conditions.push(
+   595→        `EXISTS (SELECT 1 FROM food_forms ff WHERE ff.id = p.food_form_id AND ff.slug = $${values.length})`,
+   596→      );
+   597→    }
+   598→
+   599→    const where = `WHERE ${conditions.join(' AND ')}`;
+   600→    const limitValue = input.top ?? 20;
+   601→
+   602→    const sql = `
+   603→      SELECT ${PRODUCT_BASE_COLS} ${PRODUCT_BASE_FROM} ${where}
+   604→      ORDER BY ts_rank(to_tsvector('english', p.name), to_tsquery('english', $1)) DESC
+   605→      LIMIT $${values.length + 1}
+   606→    `;
+   607→    const result = await this.execute<ProductRow>(sql, [...values, limitValue]);
+   608→    return result.rows;
+   609→  }
+   610→
+   611→  private toTsQuery(q: string): string {
+   612→    return q
+   613→      .trim()
+   614→      .split(/\s+/)
+   615→      .filter(Boolean)
+   616→      .map((w) => w.replace(/[^a-zA-Z0-9]/g, '').trim())
+   617→      .filter(Boolean)
+   618→      .map((w) => `${w}:*`)
+   619→      .join(' & ');
+   620→  }
+   621→}
+   622→
+   623→/* ================================================================
+   624→ * Companion read-only repositories
+   625→ * ================================================================ */
+   626→
+   627→@Injectable()
+   628→export class ProductLookupRepository extends BaseRepository<BaseEntity> {
+   629→  protected override readonly tableName = 'brands';
+   630→
+   631→  async findBrandById(brandId: Uuid): Promise<{
+   632→    id: Uuid; name: string; slug: string;
+   633→    countryCode: string | null; logoImageUrl: string | null; isActive: boolean;
+   634→  } | null> {
+   635→    const result = await this.execute<{
+   636→      id: Uuid; name: string; slug: string;
+   637→      country_code: string | null; logo_image_url: string | null; is_active: boolean;
+   638→    }>(
+   639→      `SELECT id, name, slug, country_code, logo_image_url, is_active FROM brands WHERE id = $1 AND deleted_at IS NULL`,
+   640→      [brandId],
+   641→    );
+   642→    if (result.rows.length === 0) return null;
+   643→    const r = result.rows[0];
+   644→    return { id: r.id, name: r.name, slug: r.slug, countryCode: r.country_code, logoImageUrl: r.logo_image_url, isActive: r.is_active };
+   645→  }
+   646→
+   647→  async findFoodFormById(foodFormId: Uuid): Promise<{
+   648→    id: Uuid; slug: string; name: string; isActive: boolean;
+   649→  } | null> {
+   650→    const result = await this.execute<{
+   651→      id: Uuid; slug: string; name: string; is_active: boolean;
+   652→    }>(
+   653→      `SELECT id, slug, name, is_active FROM food_forms WHERE id = $1 AND deleted_at IS NULL`,
+   654→      [foodFormId],
+   655→    );
+   656→    if (result.rows.length === 0) return null;
+   657→    const r = result.rows[0];
+   658→    return { id: r.id, slug: r.slug, name: r.name, isActive: r.is_active };
+   659→  }
+   660→
+   661→  async findProteinSourceById(sourceId: Uuid): Promise<{
+   662→    id: Uuid; slug: string; name: string; origin: string | null; isActive: boolean;
+   663→  } | null> {
+   664→    const result = await this.execute<{
+   665→      id: Uuid; slug: string; name: string; origin: string | null; is_active: boolean;
+   666→    }>(
+   667→      `SELECT id, slug, name, origin, is_active FROM protein_sources WHERE id = $1 AND deleted_at IS NULL`,
+   668→      [sourceId],
+   669→    );
+   670→    if (result.rows.length === 0) return null;
+   671→    const r = result.rows[0];
+   672→    return { id: r.id, slug: r.slug, name: r.name, origin: r.origin, isActive: r.is_active };
+   673→  }
+   674→}
+   675→
