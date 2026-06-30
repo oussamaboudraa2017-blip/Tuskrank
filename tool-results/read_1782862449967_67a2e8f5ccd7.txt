@@ -1,0 +1,1019 @@
+     1→-- ============================================================
+     2→-- Tuskrank — Production Database Schema
+     3→-- ------------------------------------------------------------
+     4→-- Target : PostgreSQL 14+ (compatible with Supabase)
+     5→-- Style  : 3NF, UUID primary keys, FK enforcement, audit columns
+     6→-- Soft delete : deleted_at (nullable) on mutable domain rows
+     7→-- ============================================================
+     8→
+     9→-- ----------------------------------------------------------------
+    10→-- Extensions
+    11→-- ----------------------------------------------------------------
+    12→CREATE EXTENSION IF NOT EXISTS pgcrypto;     -- gen_random_uuid()
+    13→CREATE EXTENSION IF NOT EXISTS pg_trgm;       -- trigram indexes
+    14→CREATE EXTENSION IF NOT EXISTS citext;        -- case-insensitive text
+    15→
+    16→-- ----------------------------------------------------------------
+    17→-- Conventions
+    18→-- ----------------------------------------------------------------
+    19→-- * Tables          : plural snake_case
+    20→-- * Columns         : snake_case
+    21→-- * Primary keys    : id uuid default gen_random_uuid()
+    22→-- * Audit columns   : created_at, updated_at, deleted_at (nullable)
+    23→-- * ENUMs           : Postgres ENUM types
+    24→-- * Foreign keys    : ON DELETE behavior chosen per relationship
+    25→-- * Indexes         : idx_<table>_<col[s]>
+    26→-- * Unique          : uq_<table>_<col[s]>
+    27→-- * Check           : ck_<table>_<rule>
+    28→-- ----------------------------------------------------------------
+    29→
+    30→SET client_min_messages = WARNING;
+    31→
+    32→-- ============================================================
+    33→-- SECTION 1 — LOOKUP / DOMAIN (no FKs at this layer)
+    34→-- ============================================================
+    35→
+    36→-- Pet types: dog, cat, etc.
+    37→CREATE TABLE pet_types (
+    38→    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    39→    slug         text NOT NULL,
+    40→    name         text NOT NULL,
+    41→    description  text,
+    42→    is_active    boolean NOT NULL DEFAULT true,
+    43→    created_at   timestamptz NOT NULL DEFAULT now(),
+    44→    updated_at   timestamptz NOT NULL DEFAULT now(),
+    45→    deleted_at   timestamptz,
+    46→    CONSTRAINT uq_pet_types_slug UNIQUE (slug),
+    47→    CONSTRAINT ck_pet_types_slug CHECK (slug ~ '^[a-z0-9-]+$'),
+    48→    CONSTRAINT ck_pet_types_name CHECK (length(name) BETWEEN 1 AND 100),
+    49→    CONSTRAINT ck_pet_types_description CHECK (
+    50→        description IS NULL OR length(description) <= 2000
+    51→    )
+    52→);
+    53→
+    54→-- Life stages: puppy, adult, senior, etc.
+    55→CREATE TABLE life_stages (
+    56→    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    57→    pet_type_id  uuid NOT NULL REFERENCES pet_types(id) ON DELETE RESTRICT,
+    58→    slug         text NOT NULL,
+    59→    name         text NOT NULL,
+    60→    sort_order   integer NOT NULL DEFAULT 0,
+    61→    is_active    boolean NOT NULL DEFAULT true,
+    62→    created_at   timestamptz NOT NULL DEFAULT now(),
+    63→    updated_at   timestamptz NOT NULL DEFAULT now(),
+    64→    deleted_at   timestamptz,
+    65→    CONSTRAINT uq_life_stages_pet_slug UNIQUE (pet_type_id, slug),
+    66→    CONSTRAINT ck_life_stages_slug CHECK (slug ~ '^[a-z0-9-]+$'),
+    67→    CONSTRAINT ck_life_stages_sort CHECK (sort_order >= 0),
+    68→    CONSTRAINT ck_life_stages_name CHECK (length(name) BETWEEN 1 AND 100)
+    69→);
+    70→
+    71→-- Breed sizes: small, medium, large, giant
+    72→CREATE TABLE breed_sizes (
+    73→    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    74→    pet_type_id  uuid NOT NULL REFERENCES pet_types(id) ON DELETE RESTRICT,
+    75→    slug         text NOT NULL,
+    76→    name         text NOT NULL,
+    77→    min_weight_kg numeric(6, 2),
+    78→    max_weight_kg numeric(6, 2),
+    79→    is_active    boolean NOT NULL DEFAULT true,
+    80→    created_at   timestamptz NOT NULL DEFAULT now(),
+    81→    updated_at   timestamptz NOT NULL DEFAULT now(),
+    82→    deleted_at   timestamptz,
+    83→    CONSTRAINT uq_breed_sizes_pet_slug UNIQUE (pet_type_id, slug),
+    84→    CONSTRAINT ck_breed_sizes_slug CHECK (slug ~ '^[a-z0-9-]+$'),
+    85→    CONSTRAINT ck_breed_sizes_name CHECK (length(name) BETWEEN 1 AND 100),
+    86→    CONSTRAINT ck_breed_sizes_weight_range CHECK (
+    87→        (min_weight_kg IS NULL OR min_weight_kg >= 0)
+    88→        AND (max_weight_kg IS NULL OR max_weight_kg > 0)
+    89→        AND (min_weight_kg IS NULL OR max_weight_kg IS NULL OR min_weight_kg <= max_weight_kg)
+    90→    )
+    91→);
+    92→
+    93→-- Food forms: kibble, wet, raw, freeze-dried, etc.
+    94→CREATE TABLE food_forms (
+    95→    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    96→    slug         text NOT NULL,
+    97→    name         text NOT NULL,
+    98→    is_active    boolean NOT NULL DEFAULT true,
+    99→    created_at   timestamptz NOT NULL DEFAULT now(),
+   100→    updated_at   timestamptz NOT NULL DEFAULT now(),
+   101→    deleted_at   timestamptz,
+   102→    CONSTRAINT uq_food_forms_slug UNIQUE (slug),
+   103→    CONSTRAINT ck_food_forms_slug CHECK (slug ~ '^[a-z0-9-]+$'),
+   104→    CONSTRAINT ck_food_forms_name CHECK (length(name) BETWEEN 1 AND 100)
+   105→);
+   106→
+   107→CREATE TYPE protein_origin AS ENUM ('animal', 'plant', 'insect', 'fungi', 'synthetic');
+   108→
+   109→-- Protein sources: chicken, beef, salmon, etc.
+   110→CREATE TABLE protein_sources (
+   111→    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   112→    slug         text NOT NULL,
+   113→    name         text NOT NULL,
+   114→    origin       protein_origin,                        -- animal / plant / insect / etc.
+   115→    is_active    boolean NOT NULL DEFAULT true,
+   116→    created_at   timestamptz NOT NULL DEFAULT now(),
+   117→    updated_at   timestamptz NOT NULL DEFAULT now(),
+   118→    deleted_at   timestamptz,
+   119→    CONSTRAINT uq_protein_sources_slug UNIQUE (slug),
+   120→    CONSTRAINT ck_protein_sources_slug CHECK (slug ~ '^[a-z0-9-]+$'),
+   121→    CONSTRAINT ck_protein_sources_name CHECK (length(name) BETWEEN 1 AND 100)
+   122→);
+   123→
+   124→-- Ingredient categories: protein, fat, carbohydrate, additive, ...
+   125→CREATE TABLE ingredient_categories (
+   126→    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   127→    slug         text NOT NULL,
+   128→    name         text NOT NULL,
+   129→    description  text,
+   130→    parent_id    uuid REFERENCES ingredient_categories(id) ON DELETE SET NULL,
+   131→    sort_order   integer NOT NULL DEFAULT 0,
+   132→    is_active    boolean NOT NULL DEFAULT true,
+   133→    created_at   timestamptz NOT NULL DEFAULT now(),
+   134→    updated_at   timestamptz NOT NULL DEFAULT now(),
+   135→    deleted_at   timestamptz,
+   136→    CONSTRAINT uq_ingredient_categories_slug UNIQUE (slug),
+   137→    CONSTRAINT ck_ingredient_categories_slug CHECK (slug ~ '^[a-z0-9-]+$'),
+   138→    CONSTRAINT ck_ingredient_categories_sort CHECK (sort_order >= 0),
+   139→    CONSTRAINT ck_ingredient_categories_name CHECK (length(name) BETWEEN 1 AND 100),
+   140→    CONSTRAINT ck_ingredient_categories_no_self_parent CHECK (parent_id IS NULL OR parent_id <> id)
+   141→    -- Depth policy (max 3 levels) is enforced by application code on write
+   142→    -- and audited weekly by an ops job (see database/README.md).
+   143→);
+   144→
+   145→-- Marketing / nutritional claims
+   146→CREATE TABLE claims (
+   147→    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   148→    slug         text NOT NULL,
+   149→    name         text NOT NULL,
+   150→    description  text,
+   151→    is_active    boolean NOT NULL DEFAULT true,
+   152→    created_at   timestamptz NOT NULL DEFAULT now(),
+   153→    updated_at   timestamptz NOT NULL DEFAULT now(),
+   154→    deleted_at   timestamptz,
+   155→    CONSTRAINT uq_claims_slug UNIQUE (slug),
+   156→    CONSTRAINT ck_claims_slug CHECK (slug ~ '^[a-z0-9-]+$'),
+   157→    CONSTRAINT ck_claims_name CHECK (length(name) BETWEEN 1 AND 200)
+   158→);
+   159→
+   160→-- Tags: free-form orthogonal labels (grain-free, limited-ingredient, ...)
+   161→CREATE TABLE tags (
+   162→    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   163→    slug         text NOT NULL,
+   164→    name         text NOT NULL,
+   165→    is_active    boolean NOT NULL DEFAULT true,
+   166→    created_at   timestamptz NOT NULL DEFAULT now(),
+   167→    updated_at   timestamptz NOT NULL DEFAULT now(),
+   168→    deleted_at   timestamptz,
+   169→    CONSTRAINT uq_tags_slug UNIQUE (slug),
+   170→    CONSTRAINT ck_tags_slug CHECK (slug ~ '^[a-z0-9-]+$'),
+   171→    CONSTRAINT ck_tags_name CHECK (length(name) BETWEEN 1 AND 100)
+   172→);
+   173→
+   174→-- Nutrients (definition): protein, fat, fiber, ash, calcium, ...
+   175→CREATE TABLE nutrients (
+   176→    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   177→    slug            text NOT NULL,
+   178→    name            text NOT NULL,
+   179→    symbol          text,                              -- e.g. "Ca", "Vit E"
+   180→    unit            text NOT NULL,                     -- canonical unit, e.g. "%", "mg/kg"
+   181→    description     text,
+   182→    is_guaranteed   boolean NOT NULL DEFAULT true,     -- guaranteed analysis vs typical
+   183→    is_active       boolean NOT NULL DEFAULT true,
+   184→    created_at      timestamptz NOT NULL DEFAULT now(),
+   185→    updated_at      timestamptz NOT NULL DEFAULT now(),
+   186→    deleted_at      timestamptz,
+   187→    CONSTRAINT uq_nutrients_slug UNIQUE (slug),
+   188→    CONSTRAINT ck_nutrients_slug CHECK (slug ~ '^[a-z0-9-]+$'),
+   189→    CONSTRAINT ck_nutrients_unit CHECK (length(unit) BETWEEN 1 AND 16),
+   190→    CONSTRAINT ck_nutrients_symbol CHECK (symbol IS NULL OR length(symbol) BETWEEN 1 AND 16),
+   191→    CONSTRAINT ck_nutrients_name CHECK (length(name) BETWEEN 1 AND 200)
+   192→);
+   193→
+   194→-- Scientific references: citations for claims/safety
+   195→CREATE TABLE scientific_references (
+   196→    id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   197→    title            text NOT NULL,
+   198→    authors          text,
+   199→    publication      text,
+   200→    published_year   integer,
+   201→    doi              text,
+   202→    url              text,
+   203→    summary          text,
+   204→    citation_key     text NOT NULL,                     -- compact cite key
+   205→    created_at       timestamptz NOT NULL DEFAULT now(),
+   206→    updated_at       timestamptz NOT NULL DEFAULT now(),
+   207→    deleted_at       timestamptz,
+   208→    CONSTRAINT uq_scientific_references_citation_key UNIQUE (citation_key),
+   209→    CONSTRAINT ck_scientific_references_title CHECK (length(title) BETWEEN 3 AND 1000),
+   210→    CONSTRAINT ck_scientific_references_year CHECK (
+   211→        published_year IS NULL OR (published_year BETWEEN 1800 AND 2200)
+   212→    ),
+   213→    CONSTRAINT ck_scientific_references_doi CHECK (
+   214→        doi IS NULL OR doi ~ '^10\.'
+   215→    ),
+   216→    CONSTRAINT ck_scientific_references_url CHECK (
+   217→        url IS NULL OR url ~* '^https?://'
+   218→    )
+   219→);
+   220→
+   221→-- ============================================================
+   222→-- SECTION 2 — BRANDS, PRODUCTS, INGREDIENTS (CORE)
+   223→-- ============================================================
+   224→
+   225→CREATE TABLE brands (
+   226→    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   227→    name            text NOT NULL,
+   228→    slug            text NOT NULL,
+   229→    manufacturer    text,
+   230→    country_code    char(2),                           -- ISO-3166 alpha-2
+   231→    website_url     text,
+   232→    description     text,
+   233→    logo_image_url  text,
+   234→    is_active       boolean NOT NULL DEFAULT true,
+   235→    created_at      timestamptz NOT NULL DEFAULT now(),
+   236→    updated_at      timestamptz NOT NULL DEFAULT now(),
+   237→    deleted_at      timestamptz,
+   238→    CONSTRAINT uq_brands_slug UNIQUE (slug),
+   239→    CONSTRAINT ck_brands_slug CHECK (slug ~ '^[a-z0-9-]+$'),
+   240→    CONSTRAINT ck_brands_name_nonempty CHECK (length(name) > 0 AND length(name) <= 200),
+   241→    CONSTRAINT ck_brands_country_iso CHECK (country_code ~ '^[A-Z]{2}$')
+   242→    -- NOTE: country_code is CHAR(2) so values are stored space-padded only
+   243→    -- when shorter than 2 chars. Indexes on it (idx_brands_country) treat
+   244→    -- spaces as significant in equality; this is the documented behaviour.
+   245→);
+   246→
+   247→CREATE TABLE ingredients (
+   248→    id                       uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   249→    name                     text NOT NULL,
+   250→    slug                     text NOT NULL,
+   251→    inci_name                text,
+   252→    category_id              uuid REFERENCES ingredient_categories(id) ON DELETE RESTRICT,
+   253→    canonical_name           citext NOT NULL,         -- normalized lowercase name
+   254→    description              text,
+   255→    is_animal_derived        boolean NOT NULL DEFAULT false,
+   256→    is_common_allergen       boolean NOT NULL DEFAULT false,
+   257→    is_controversial         boolean NOT NULL DEFAULT false,
+   258→    is_active                boolean NOT NULL DEFAULT true,
+   259→    created_at               timestamptz NOT NULL DEFAULT now(),
+   260→    updated_at               timestamptz NOT NULL DEFAULT now(),
+   261→    deleted_at               timestamptz,
+   262→    CONSTRAINT uq_ingredients_slug UNIQUE (slug),
+   263→    CONSTRAINT ck_ingredients_slug CHECK (slug ~ '^[a-z0-9-]+$'),
+   264→    CONSTRAINT ck_ingredients_name CHECK (length(name) BETWEEN 1 AND 200),
+   265→    CONSTRAINT ck_ingredients_canonical CHECK (length(canonical_name) BETWEEN 1 AND 200),
+   266→    CONSTRAINT ck_ingredients_description CHECK (
+   267→        description IS NULL OR length(description) <= 8000
+   268→    )
+   269→);
+   270→
+   271→CREATE TABLE products (
+   272→    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   273→    brand_id            uuid NOT NULL REFERENCES brands(id) ON DELETE RESTRICT,
+   274→    name                text NOT NULL,
+   275→    slug                text NOT NULL,
+   276→    description         text,
+   277→    upc                 text,                          -- GTIN/UPC (8/12/13/14 digits)
+   278→    sku                 text,                          -- manufacturer SKU
+   279→    package_size_grams  numeric(10, 2),
+   280→    package_size_label  text,                          -- e.g. "5 lb", "2.5 kg"
+   281→    food_form_id        uuid REFERENCES food_forms(id) ON DELETE RESTRICT,
+   282→    primary_protein_source_id uuid REFERENCES protein_sources(id) ON DELETE RESTRICT,
+   283→    is_active           boolean NOT NULL DEFAULT true,
+   284→    published_at        timestamptz,
+   285→    created_at          timestamptz NOT NULL DEFAULT now(),
+   286→    updated_at          timestamptz NOT NULL DEFAULT now(),
+   287→    deleted_at          timestamptz,
+   288→    CONSTRAINT uq_products_brand_slug UNIQUE (brand_id, slug),
+   289→    CONSTRAINT ck_products_slug CHECK (slug ~ '^[a-z0-9-]+$'),
+   290→    CONSTRAINT ck_products_name_nonempty CHECK (length(name) > 0 AND length(name) <= 200),
+   291→    CONSTRAINT ck_products_package_size CHECK (
+   292→        package_size_grams IS NULL OR package_size_grams > 0
+   293→    ),
+   294→    CONSTRAINT ck_products_upc_format CHECK (
+   295→        upc IS NULL OR upc ~ '^[0-9]{8,14}$'
+   296→    ),
+   297→    CONSTRAINT ck_products_upc_check_digit CHECK (
+   298→        upc IS NULL OR length(upc) IN (8, 12, 13, 14)
+   299→    )
+   300→);
+   301→
+   302→-- Join: product ↔ ingredient (with position for ingredient order)
+   303→CREATE TABLE product_ingredients (
+   304→    id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   305→    product_id        uuid NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+   306→    ingredient_id     uuid NOT NULL REFERENCES ingredients(id) ON DELETE RESTRICT,
+   307→    position          integer NOT NULL,                -- order on ingredient panel
+   308→    raw_label         text,                            -- verbatim label string
+   309→    is_primary        boolean NOT NULL DEFAULT false,  -- primary ingredient flag
+   310→    percentage_value  numeric(6, 3),
+   311→    is_active         boolean NOT NULL DEFAULT true,
+   312→    created_at        timestamptz NOT NULL DEFAULT now(),
+   313→    updated_at        timestamptz NOT NULL DEFAULT now(),
+   314→    deleted_at        timestamptz,
+   315→    CONSTRAINT ck_product_ingredients_position_pos CHECK (position > 0 AND position <= 500),
+   316→    CONSTRAINT ck_product_ingredients_percentage CHECK (
+   317→        percentage_value IS NULL OR (percentage_value > 0 AND percentage_value <= 100)
+   318→    ),
+   319→    CONSTRAINT ck_product_ingredients_raw_label_len CHECK (
+   320→        raw_label IS NULL OR length(raw_label) BETWEEN 1 AND 500
+   321→    )
+   322→);
+   323→
+   324→-- ============================================================
+   325→-- SECTION 3 — PRODUCT INFORMATION EXTENSIONS
+   326→-- ============================================================
+   327→
+   328→CREATE TABLE categories (
+   329→    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   330→    pet_type_id     uuid NOT NULL REFERENCES pet_types(id) ON DELETE RESTRICT,
+   331→    slug            text NOT NULL,
+   332→    name            text NOT NULL,
+   333→    description     text,
+   334→    parent_id       uuid REFERENCES categories(id) ON DELETE SET NULL,
+   335→    is_active       boolean NOT NULL DEFAULT true,
+   336→    created_at      timestamptz NOT NULL DEFAULT now(),
+   337→    updated_at      timestamptz NOT NULL DEFAULT now(),
+   338→    deleted_at      timestamptz,
+   339→    CONSTRAINT uq_categories_pet_slug UNIQUE (pet_type_id, slug),
+   340→    CONSTRAINT ck_categories_slug CHECK (slug ~ '^[a-z0-9-]+$'),
+   341→    CONSTRAINT ck_categories_name CHECK (length(name) BETWEEN 1 AND 100),
+   342→    CONSTRAINT ck_categories_no_self_parent CHECK (parent_id IS NULL OR parent_id <> id)
+   343→);
+   344→
+   345→-- Product × category × life stage × breed size — fan-out
+   346→-- pet_type is required (every product targets ≥1 species); the other
+   347→-- dimensions narrow the target.
+   348→CREATE TABLE product_targeting (
+   349→    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   350→    product_id      uuid NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+   351→    pet_type_id     uuid NOT NULL REFERENCES pet_types(id) ON DELETE RESTRICT,
+   352→    life_stage_id   uuid REFERENCES life_stages(id) ON DELETE RESTRICT,
+   353→    breed_size_id   uuid REFERENCES breed_sizes(id) ON DELETE RESTRICT,
+   354→    category_id     uuid REFERENCES categories(id) ON DELETE RESTRICT,
+   355→    is_active       boolean NOT NULL DEFAULT true,
+   356→    created_at      timestamptz NOT NULL DEFAULT now(),
+   357→    updated_at      timestamptz NOT NULL DEFAULT now(),
+   358→    deleted_at      timestamptz,
+   359→    CONSTRAINT uq_product_targeting UNIQUE (product_id, pet_type_id, life_stage_id, breed_size_id, category_id),
+   360→    CONSTRAINT ck_product_targeting_dimensions CHECK (
+   361→        life_stage_id IS NOT NULL
+   362→        OR breed_size_id IS NOT NULL
+   363→        OR category_id   IS NOT NULL
+   364→    ),
+   365→    CONSTRAINT ck_product_targeting_breed_life_combo CHECK (
+   366→        breed_size_id IS NULL OR life_stage_id IS NULL OR category_id IS NOT NULL
+   367→        OR breed_size_id IS NOT NULL
+   368→    )
+   369→);
+   370→
+   371→CREATE TABLE product_images (
+   372→    id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   373→    product_id       uuid NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+   374→    storage_path     text NOT NULL,                   -- supabase storage path
+   375→    public_url       text NOT NULL,
+   376→    alt_text         text,
+   377→    width_px         integer,
+   378→    height_px        integer,
+   379→    bytes            bigint,
+   380→    mime_type        text,
+   381→    sort_order       integer NOT NULL DEFAULT 0,
+   382→    is_primary       boolean NOT NULL DEFAULT false,
+   383→    created_at       timestamptz NOT NULL DEFAULT now(),
+   384→    updated_at       timestamptz NOT NULL DEFAULT now(),
+   385→    deleted_at       timestamptz,
+   386→    CONSTRAINT ck_product_images_width CHECK (width_px IS NULL OR width_px > 0),
+   387→    CONSTRAINT ck_product_images_height CHECK (height_px IS NULL OR height_px > 0),
+   388→    CONSTRAINT ck_product_images_bytes CHECK (bytes IS NULL OR bytes > 0),
+   389→    CONSTRAINT ck_product_images_sort CHECK (sort_order >= 0),
+   390→    CONSTRAINT ck_product_images_mime CHECK (
+   391→        mime_type IS NULL OR mime_type ~ '^[a-z]+/[a-z0-9.+-]+$'
+   392→    ),
+   393→    CONSTRAINT ck_product_images_url CHECK (public_url ~* '^https?://'),
+   394→    CONSTRAINT ck_product_images_storage_path CHECK (
+   395→        storage_path ~ '^[A-Za-z0-9._/-]+$'
+   396→    ),
+   397→    CONSTRAINT ck_product_images_alt CHECK (alt_text IS NULL OR length(alt_text) <= 1000)
+   398→);
+   399→
+   400→-- Nutrition profile (one guaranteed analysis row per product; history captured separately)
+   401→CREATE TABLE nutrition_profiles (
+   402→    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   403→    product_id          uuid NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+   404→    kcal_per_100g       numeric(7, 3),
+   405→    kcal_per_cup        numeric(7, 3),
+   406→    moisture_pct        numeric(5, 2),
+   407→    effective_from      date NOT NULL,
+   408→    effective_to        date,
+   409→    source              nutrition_source,
+   410→    notes               text,
+   411→    created_at          timestamptz NOT NULL DEFAULT now(),
+   412→    updated_at          timestamptz NOT NULL DEFAULT now(),
+   413→    deleted_at          timestamptz,
+   414→    CONSTRAINT ck_nutrition_profiles_kcal CHECK (
+   415→        kcal_per_100g IS NULL OR (kcal_per_100g > 0 AND kcal_per_100g <= 1000)
+   416→    ),
+   417→    CONSTRAINT ck_nutrition_profiles_kcal_cup CHECK (
+   418→        kcal_per_cup IS NULL OR (kcal_per_cup > 0 AND kcal_per_cup <= 5000)
+   419→    ),
+   420→    CONSTRAINT ck_nutrition_profiles_moisture CHECK (
+   421→        moisture_pct IS NULL OR (moisture_pct >= 0 AND moisture_pct <= 100)
+   422→    ),
+   423→    CONSTRAINT ck_nutrition_profiles_dates CHECK (
+   424→        effective_to IS NULL OR effective_to >= effective_from
+   425→    ),
+   426→    CONSTRAINT ck_nutrition_profiles_notes CHECK (
+   427→        notes IS NULL OR length(notes) <= 4000
+   428→    )
+   429→);
+   430→-- (History-friendly: a product MAY have multiple historical nutrition
+   431→-- profiles. Uniqueness of the *currently effective* profile is enforced
+   432→-- in indexes.sql as a partial unique index on `effective_to IS NULL`.)
+   433→
+   434→CREATE TYPE nutrient_bound AS ENUM ('exact', 'min', 'max', 'typical');
+   435→
+   436→-- Product × nutrient values
+   437→-- amount_unit is normalized to the unit canonical to the parent nutrient.
+   438→-- For unit-ambiguous nutrients (e.g. energy in kcal vs kJ), record the
+   439→-- canonical unit at write time and validate via trigger if needed.
+   440→CREATE TABLE product_nutrients (
+   441→    id                       uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   442→    product_id               uuid NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+   443→    nutrient_id              uuid NOT NULL REFERENCES nutrients(id) ON DELETE RESTRICT,
+   444→    nutrition_profile_id     uuid REFERENCES nutrition_profiles(id) ON DELETE CASCADE,
+   445→    amount                   numeric(12, 6) NOT NULL,
+   446→    unit                     text NOT NULL,            -- canonical unit at write time
+   447→    bound                    nutrient_bound NOT NULL DEFAULT 'exact',
+   448→    created_at               timestamptz NOT NULL DEFAULT now(),
+   449→    updated_at               timestamptz NOT NULL DEFAULT now(),
+   450→    deleted_at               timestamptz,
+   451→    CONSTRAINT ck_product_nutrients_amount CHECK (amount >= 0),
+   452→    CONSTRAINT ck_product_nutrients_unit CHECK (length(unit) BETWEEN 1 AND 16)
+   453→    -- Uniqueness (active rows):
+   454→    --   1. (product_id, nutrient_id, bound) WHERE nutrition_profile_id IS NULL
+   455→    --   2. (product_id, nutrient_id, bound, nutrition_profile_id) WHERE NOT NULL
+   456→    -- declared as partial unique indexes in indexes.sql
+   457→);
+   458→
+   459→CREATE TABLE product_claims (
+   460→    id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   461→    product_id        uuid NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+   462→    claim_id          uuid NOT NULL REFERENCES claims(id) ON DELETE RESTRICT,
+   463→    evidence_note     text,
+   464→    created_at        timestamptz NOT NULL DEFAULT now(),
+   465→    updated_at        timestamptz NOT NULL DEFAULT now(),
+   466→    deleted_at        timestamptz,
+   467→    CONSTRAINT uq_product_claims UNIQUE (product_id, claim_id),
+   468→    CONSTRAINT ck_product_claims_note CHECK (
+   469→        evidence_note IS NULL OR length(evidence_note) <= 4000
+   470→    )
+   471→);
+   472→
+   473→CREATE TABLE product_tags (
+   474→    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   475→    product_id   uuid NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+   476→    tag_id       uuid NOT NULL REFERENCES tags(id) ON DELETE RESTRICT,
+   477→    created_at   timestamptz NOT NULL DEFAULT now(),
+   478→    updated_at   timestamptz NOT NULL DEFAULT now(),
+   479→    deleted_at   timestamptz,
+   480→    CONSTRAINT uq_product_tags UNIQUE (product_id, tag_id)
+   481→);
+   482→
+   483→-- ============================================================
+   484→-- SECTION 4 — SCORING
+   485→-- ============================================================
+   486→
+   487→CREATE TABLE ingredient_scores (
+   488→    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   489→    ingredient_id       uuid NOT NULL REFERENCES ingredients(id) ON DELETE CASCADE,
+   490→    score               numeric(5, 2) NOT NULL,
+   491→    grade               text NOT NULL,                -- A+ ... F
+   492→    reasoning           text,
+   493→    scoring_version     text NOT NULL,
+   494→    is_current          boolean NOT NULL DEFAULT true,
+   495→    created_at          timestamptz NOT NULL DEFAULT now(),
+   496→    updated_at          timestamptz NOT NULL DEFAULT now(),
+   497→    deleted_at          timestamptz,
+   498→    CONSTRAINT ck_ingredient_scores_score_range CHECK (
+   499→        score >= 0 AND score <= 100
+   500→    ),
+   501→    CONSTRAINT ck_ingredient_scores_grade CHECK (
+   502→        grade ~ '^([ABCDEF][+-]?)$'
+   503→    ),
+   504→    CONSTRAINT ck_ingredient_scores_version CHECK (length(scoring_version) BETWEEN 1 AND 32),
+   505→    CONSTRAINT ck_ingredient_scores_reasoning CHECK (
+   506→        reasoning IS NULL OR length(reasoning) <= 4000
+   507→    )
+   508→    -- "single current" partial unique: at most one is_current=true row per
+   509→    -- ingredient (across active rows). Enforced in indexes.sql.
+   510→);
+   511→
+   512→CREATE TABLE product_scores (
+   513→    id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   514→    product_id              uuid NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+   515→    overall_score           numeric(5, 2) NOT NULL,
+   516→    quality_score           numeric(5, 2),
+   517→    safety_score            numeric(5, 2),
+   518→    nutrition_score         numeric(5, 2),
+   519→    transparency_score      numeric(5, 2),
+   520→    processing_score        NUMERIC(5,2),
+   521→    scientific_evidence_score NUMERIC(5,2),
+   522→    label_accuracy_score    NUMERIC(5,2),
+   523→    scoring_version         text NOT NULL,
+   524→    is_current              boolean NOT NULL DEFAULT true,
+   525→    created_at              timestamptz NOT NULL DEFAULT now(),
+   526→    updated_at              timestamptz NOT NULL DEFAULT now(),
+   527→    deleted_at              timestamptz,
+   528→    CONSTRAINT ck_product_scores_overall CHECK (
+   529→        overall_score >= 0 AND overall_score <= 100
+   530→    ),
+   531→    CONSTRAINT ck_product_scores_quality CHECK (
+   532→        quality_score IS NULL OR (quality_score >= 0 AND quality_score <= 100)
+   533→    ),
+   534→    CONSTRAINT ck_product_scores_safety CHECK (
+   535→        safety_score IS NULL OR (safety_score >= 0 AND safety_score <= 100)
+   536→    ),
+   537→    CONSTRAINT ck_product_scores_nutrition CHECK (
+   538→        nutrition_score IS NULL OR (nutrition_score >= 0 AND nutrition_score <= 100)
+   539→    ),
+   540→    CONSTRAINT ck_product_scores_transparency CHECK (
+   541→        transparency_score IS NULL OR (transparency_score >= 0 AND transparency_score <= 100)
+   542→    ),
+   543→    CONSTRAINT ck_product_scores_processing CHECK (
+   544→        processing_score IS NULL OR (processing_score >= 0 AND processing_score <= 100)
+   545→    ),
+   546→    CONSTRAINT ck_product_scores_scientific CHECK (
+   547→        scientific_evidence_score IS NULL OR (scientific_evidence_score >= 0 AND scientific_evidence_score <= 100)
+   548→    ),
+   549→    CONSTRAINT ck_product_scores_label CHECK (
+   550→        label_accuracy_score IS NULL OR (label_accuracy_score >= 0 AND label_accuracy_score <= 100)
+   551→    ),
+   552→    CONSTRAINT ck_product_scores_version CHECK (length(scoring_version) BETWEEN 1 AND 32)
+   553→    -- "single current" partial unique: at most one is_current=true row per
+   554→    -- product (across active rows). Enforced in indexes.sql.
+   555→);
+   556→
+   557→CREATE TABLE score_history (
+   558→    id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   559→    product_id              uuid NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+   560→    overall_score           numeric(5, 2) NOT NULL,
+   561→    quality_score           numeric(5, 2),
+   562→    safety_score            numeric(5, 2),
+   563→    nutrition_score         numeric(5, 2),
+   564→    transparency_score      numeric(5, 2),
+   565→    processing_score        NUMERIC(5,2),
+   566→    scientific_evidence_score NUMERIC(5,2),
+   567→    label_accuracy_score    NUMERIC(5,2),
+   568→    scoring_version         text NOT NULL,
+   569→    computed_at             timestamptz NOT NULL DEFAULT now(),
+   570→    triggered_by            score_history_trigger,        -- manual / scheduled / data_change / import / seed
+   571→    notes                   text,
+   572→    created_at              timestamptz NOT NULL DEFAULT now(),
+   573→    CONSTRAINT ck_score_history_overall CHECK (
+   574→        overall_score >= 0 AND overall_score <= 100
+   575→    ),
+   576→    CONSTRAINT ck_score_history_quality CHECK (
+   577→        quality_score IS NULL OR (quality_score >= 0 AND quality_score <= 100)
+   578→    ),
+   579→    CONSTRAINT ck_score_history_safety CHECK (
+   580→        safety_score IS NULL OR (safety_score >= 0 AND safety_score <= 100)
+   581→    ),
+   582→    CONSTRAINT ck_score_history_nutrition CHECK (
+   583→        nutrition_score IS NULL OR (nutrition_score >= 0 AND nutrition_score <= 100)
+   584→    ),
+   585→    CONSTRAINT ck_score_history_transparency CHECK (
+   586→        transparency_score IS NULL OR (transparency_score >= 0 AND transparency_score <= 100)
+   587→    ),
+   588→    CONSTRAINT ck_score_history_processing CHECK (
+   589→        processing_score IS NULL OR (processing_score >= 0 AND processing_score <= 100)
+   590→    ),
+   591→    CONSTRAINT ck_score_history_scientific CHECK (
+   592→        scientific_evidence_score IS NULL OR (scientific_evidence_score >= 0 AND scientific_evidence_score <= 100)
+   593→    ),
+   594→    CONSTRAINT ck_score_history_label CHECK (
+   595→        label_accuracy_score IS NULL OR (label_accuracy_score >= 0 AND label_accuracy_score <= 100)
+   596→    ),
+   597→    CONSTRAINT ck_score_history_version CHECK (length(scoring_version) BETWEEN 1 AND 32),
+   598→    CONSTRAINT ck_score_history_notes CHECK (
+   599→        notes IS NULL OR length(notes) <= 4000
+   600→    )
+   601→    -- Append-only by convention. Direct UPDATE/DELETE are revoked from
+   602→    -- application roles; use fn_write_audit for any audit-meta updates and
+   603→    -- never modify scoring history directly. Future retention:
+   604→    --   DELETE FROM score_history WHERE computed_at < now() - interval '2 years';
+   605→    -- is run from a maintenance job after partitioning migration.
+   606→);
+   607→
+   608→-- ============================================================
+   609→-- SECTION 5 — SCIENCE / CITATIONS
+   610→-- ============================================================
+   611→
+   612→CREATE TYPE evidence_type_t AS ENUM ('supports', 'refutes', 'neutral');
+   613→
+   614→CREATE TABLE ingredient_references (
+   615→    id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   616→    ingredient_id      uuid NOT NULL REFERENCES ingredients(id) ON DELETE CASCADE,
+   617→    reference_id       uuid NOT NULL REFERENCES scientific_references(id) ON DELETE CASCADE,
+   618→    evidence_type      evidence_type_t,               -- supports / refutes / neutral
+   619→    relevance_score    numeric(4, 2),
+   620→    notes              text,
+   621→    created_at         timestamptz NOT NULL DEFAULT now(),
+   622→    updated_at         timestamptz NOT NULL DEFAULT now(),
+   623→    deleted_at         timestamptz,
+   624→    CONSTRAINT uq_ingredient_references UNIQUE (ingredient_id, reference_id),
+   625→    CONSTRAINT ck_ingredient_references_relevance CHECK (
+   626→        relevance_score IS NULL OR (relevance_score >= 0 AND relevance_score <= 10)
+   627→    ),
+   628→    CONSTRAINT ck_ingredient_references_notes CHECK (
+   629→        notes IS NULL OR length(notes) <= 4000
+   630→    )
+   631→);
+   632→
+   633→-- ============================================================
+   634→-- SECTION 6 — TRUST
+   635→-- ============================================================
+   636→
+   637→CREATE TYPE recall_severity AS ENUM ('low', 'moderate', 'high', 'critical');
+   638→CREATE TYPE recall_status   AS ENUM ('announced', 'ongoing', 'resolved', 'withdrawn');
+   639→CREATE TYPE nutrition_source AS ENUM ('label', 'lab', 'vendor', 'calculated', 'official');
+   640→CREATE TYPE score_history_trigger AS ENUM ('manual', 'scheduled', 'data_change', 'import', 'seed');
+   641→
+   642→CREATE TABLE recalls (
+   643→    id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   644→    brand_id           uuid REFERENCES brands(id) ON DELETE SET NULL,
+   645→    product_id         uuid REFERENCES products(id) ON DELETE SET NULL,
+   646→    title              text NOT NULL,
+   647→    description        text NOT NULL,
+   648→    announced_on       date NOT NULL,
+   649→    resolved_on        date,
+   650→    severity           recall_severity NOT NULL,
+   651→    status             recall_status NOT NULL DEFAULT 'announced',
+   652→    source_label       text,                          -- e.g. FDA, manufacturer
+   653→    source_url         text,
+   654→    case_number        text,                          -- external case id
+   655→    created_at         timestamptz NOT NULL DEFAULT now(),
+   656→    updated_at         timestamptz NOT NULL DEFAULT now(),
+   657→    deleted_at         timestamptz,
+   658→    CONSTRAINT ck_recalls_dates CHECK (
+   659→        resolved_on IS NULL OR resolved_on >= announced_on
+   660→    ),
+   661→    CONSTRAINT ck_recalls_title_nonempty CHECK (length(title) BETWEEN 1 AND 500),
+   662→    CONSTRAINT ck_recalls_description_nonempty CHECK (length(description) BETWEEN 1 AND 10000),
+   663→    CONSTRAINT ck_recalls_source_url CHECK (source_url IS NULL OR source_url ~* '^https?://')
+   664→    -- Natural-id uniqueness for de-duplication on ingestion is enforced in
+   665→    -- indexes.sql as a partial unique on (source_label, case_number)
+   666→    -- WHERE case_number IS NOT NULL AND deleted_at IS NULL.
+   667→);
+   668→
+   669→CREATE TABLE certifications (
+   670→    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   671→    slug         text NOT NULL,
+   672→    name         text NOT NULL,
+   673→    description  text,
+   674→    issuer       text NOT NULL,
+   675→    is_active    boolean NOT NULL DEFAULT true,
+   676→    created_at   timestamptz NOT NULL DEFAULT now(),
+   677→    updated_at   timestamptz NOT NULL DEFAULT now(),
+   678→    deleted_at   timestamptz,
+   679→    CONSTRAINT uq_certifications_slug UNIQUE (slug),
+   680→    CONSTRAINT ck_certifications_slug CHECK (slug ~ '^[a-z0-9-]+$'),
+   681→    CONSTRAINT ck_certifications_name CHECK (length(name) BETWEEN 1 AND 200),
+   682→    CONSTRAINT ck_certifications_issuer CHECK (length(issuer) BETWEEN 1 AND 200),
+   683→    CONSTRAINT ck_certifications_description CHECK (
+   684→        description IS NULL OR length(description) <= 8000
+   685→    )
+   686→);
+   687→
+   688→CREATE TABLE brand_certifications (
+   689→    id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   690→    brand_id          uuid NOT NULL REFERENCES brands(id) ON DELETE CASCADE,
+   691→    certification_id  uuid NOT NULL REFERENCES certifications(id) ON DELETE CASCADE,
+   692→    issued_on         date NOT NULL,
+   693→    expires_on        date,
+   694→    certificate_url   text,
+   695→    created_at        timestamptz NOT NULL DEFAULT now(),
+   696→    updated_at        timestamptz NOT NULL DEFAULT now(),
+   697→    deleted_at        timestamptz,
+   698→    CONSTRAINT uq_brand_certifications UNIQUE (brand_id, certification_id),
+   699→    CONSTRAINT ck_brand_certifications_dates CHECK (
+   700→        expires_on IS NULL OR expires_on >= issued_on
+   701→    ),
+   702→    CONSTRAINT ck_brand_certifications_url CHECK (
+   703→        certificate_url IS NULL OR certificate_url ~* '^https?://'
+   704→    )
+   705→);
+   706→
+   707→CREATE TABLE transparency_reports (
+   708→    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   709→    brand_id     uuid NOT NULL REFERENCES brands(id) ON DELETE CASCADE,
+   710→    reporting_year integer NOT NULL,
+   711→    title        text NOT NULL,
+   712→    summary      text,
+   713→    url          text,
+   714→    created_at   timestamptz NOT NULL DEFAULT now(),
+   715→    updated_at   timestamptz NOT NULL DEFAULT now(),
+   716→    deleted_at   timestamptz,
+   717→    CONSTRAINT uq_transparency_reports UNIQUE (brand_id, reporting_year),
+   718→    CONSTRAINT ck_transparency_reports_year CHECK (
+   719→        reporting_year BETWEEN 1900 AND 2200
+   720→    ),
+   721→    CONSTRAINT ck_transparency_reports_title CHECK (length(title) BETWEEN 1 AND 300),
+   722→    CONSTRAINT ck_transparency_reports_url CHECK (
+   723→        url IS NULL OR url ~* '^https?://'
+   724→    )
+   725→);
+   726→
+   727→-- ============================================================
+   728→-- SECTION 7 — SEARCH
+   729→-- ============================================================
+   730→
+   731→CREATE TABLE search_keywords (
+   732→    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   733→    normalized    citext NOT NULL,
+   734→    raw           text NOT NULL,
+   735→    entity_type   text NOT NULL,                  -- product / brand / ingredient / general
+   736→    entity_id     uuid,                          -- nullable; FK enforced by application
+   737→    locale        text NOT NULL DEFAULT 'en-US',
+   738→    created_at    timestamptz NOT NULL DEFAULT now(),
+   739→    updated_at    timestamptz NOT NULL DEFAULT now(),
+   740→    deleted_at    timestamptz,
+   741→    CONSTRAINT ck_search_keywords_entity CHECK (
+   742→        entity_type IN ('product', 'brand', 'ingredient', 'general')
+   743→    ),
+   744→    CONSTRAINT ck_search_keywords_norm_nonempty CHECK (length(normalized) BETWEEN 1 AND 200),
+   745→    CONSTRAINT ck_search_keywords_raw CHECK (length(raw) BETWEEN 1 AND 500),
+   746→    CONSTRAINT ck_search_keywords_locale CHECK (locale ~ '^[a-z]{2}(-[A-Z]{2})?$'),
+   747→    CONSTRAINT uq_search_keywords_unique UNIQUE (normalized, entity_type, entity_id, locale)
+   748→);
+   749→
+   750→CREATE TABLE search_synonyms (
+   751→    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   752→    canonical    citext NOT NULL,
+   753→    synonym      citext NOT NULL,
+   754→    locale       text NOT NULL DEFAULT 'en-US',
+   755→    entity_type  text,                           -- optional narrowing
+   756→    created_at   timestamptz NOT NULL DEFAULT now(),
+   757→    updated_at   timestamptz NOT NULL DEFAULT now(),
+   758→    deleted_at   timestamptz,
+   759→    CONSTRAINT uq_search_synonyms UNIQUE (canonical, synonym, locale),
+   760→    CONSTRAINT ck_search_synonyms_norm CHECK (
+   761→        length(canonical) BETWEEN 1 AND 200
+   762→        AND length(synonym)  BETWEEN 1 AND 200
+   763→    ),
+   764→    CONSTRAINT ck_search_synonyms_entity CHECK (
+   765→        entity_type IS NULL OR entity_type IN ('product','brand','ingredient','general')
+   766→    ),
+   767→    CONSTRAINT ck_search_synonyms_no_self CHECK (canonical <> synonym)
+   768→);
+   769→
+   770→CREATE TABLE popular_searches (
+   771→    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   772→    normalized    citext NOT NULL,
+   773→    window_start  timestamptz NOT NULL,
+   774→    window_end    timestamptz NOT NULL,
+   775→    count         bigint NOT NULL,
+   776→    locale        text NOT NULL DEFAULT 'en-US',
+   777→    created_at    timestamptz NOT NULL DEFAULT now(),
+   778→    updated_at    timestamptz NOT NULL DEFAULT now(),
+   779→    deleted_at    timestamptz,
+   780→    CONSTRAINT uq_popular_searches_window UNIQUE (normalized, window_start, window_end),
+   781→    CONSTRAINT ck_popular_searches_dates CHECK (window_end > window_start),
+   782→    CONSTRAINT ck_popular_searches_count CHECK (count >= 0),
+   783→    CONSTRAINT ck_popular_searches_window_len CHECK (
+   784→        window_end - window_start >= interval '1 hour'
+   785→        AND window_end - window_start <= interval '7 days'
+   786→    )
+   787→);
+   788→
+   789→-- Search analytics (raw event log; not the aggregate)
+   790→-- High-volume table; partitioning is planned (see database/README.md).
+   791→CREATE TABLE search_logs (
+   792→    id              uuid         PRIMARY KEY DEFAULT gen_random_uuid(),
+   793→    took_at         timestamptz  NOT NULL DEFAULT now(),
+   794→    user_id         uuid,
+   795→    session_id      text,
+   796→    normalized      text         NOT NULL,
+   797→    raw             text         NOT NULL,
+   798→    result_count    integer      NOT NULL,
+   799→    latency_ms      integer      NOT NULL,
+   800→    entity_types    text[]       NOT NULL DEFAULT '{}',
+   801→    request_id      text,
+   802→    ip_address      inet,
+   803→    user_agent      text,
+   804→    CONSTRAINT ck_search_logs_count CHECK (result_count >= 0),
+   805→    CONSTRAINT ck_search_logs_latency CHECK (latency_ms >= 0 AND latency_ms <= 60000),
+   806→    CONSTRAINT ck_search_logs_norm_nonempty CHECK (length(normalized) BETWEEN 1 AND 500),
+   807→    CONSTRAINT ck_search_logs_raw_nonempty CHECK (length(raw) BETWEEN 1 AND 500),
+   808→    CONSTRAINT ck_search_logs_session_len CHECK (
+   809→        session_id IS NULL OR length(session_id) BETWEEN 1 AND 128
+   810→    ),
+   811→    CONSTRAINT ck_search_logs_user_agent_len CHECK (
+   812→        user_agent IS NULL OR length(user_agent) <= 512
+   813→    ),
+   814→    CONSTRAINT ck_search_logs_ip CHECK (ip_address IS NULL OR family(ip_address) IN (4, 6)),
+   815→    CONSTRAINT ck_search_logs_request_id_len CHECK (
+   816→        request_id IS NULL OR length(request_id) BETWEEN 1 AND 64
+   817→    )
+   818→);
+   819→
+   820→-- ============================================================
+   821→-- SECTION 8 — RECOMMENDATIONS
+   822→-- ============================================================
+   823→
+   824→CREATE TABLE product_alternatives (
+   825→    id                       uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   826→    product_id               uuid NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+   827→    alternative_product_id   uuid NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+   828→    score_delta              numeric(5, 2) NOT NULL,
+   829→    reasoning                text,
+   830→    scoring_version          text NOT NULL,
+   831→    is_active                boolean NOT NULL DEFAULT true,
+   832→    created_at               timestamptz NOT NULL DEFAULT now(),
+   833→    updated_at               timestamptz NOT NULL DEFAULT now(),
+   834→    deleted_at               timestamptz,
+   835→    CONSTRAINT uq_product_alternatives UNIQUE (product_id, alternative_product_id),
+   836→    CONSTRAINT ck_product_alternatives_no_self CHECK (product_id <> alternative_product_id),
+   837→    CONSTRAINT ck_product_alternatives_delta CHECK (
+   838→        score_delta >= -100 AND score_delta <= 100
+   839→    ),
+   840→    CONSTRAINT ck_product_alternatives_reasoning CHECK (
+   841→        reasoning IS NULL OR length(reasoning) <= 4000
+   842→    ),
+   843→    CONSTRAINT ck_product_alternatives_version CHECK (length(scoring_version) BETWEEN 1 AND 32)
+   844→);
+   845→
+   846→CREATE TABLE relation_types (
+   847→    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   848→    slug         text NOT NULL,
+   849→    name         text NOT NULL,
+   850→    description  text,
+   851→    is_directed  boolean NOT NULL DEFAULT true,       -- symmetric or asymmetric?
+   852→    is_active    boolean NOT NULL DEFAULT true,
+   853→    created_at   timestamptz NOT NULL DEFAULT now(),
+   854→    updated_at   timestamptz NOT NULL DEFAULT now(),
+   855→    deleted_at   timestamptz,
+   856→    CONSTRAINT uq_relation_types_slug UNIQUE (slug),
+   857→    CONSTRAINT ck_relation_types_slug CHECK (slug ~ '^[a-z0-9-]+$'),
+   858→    CONSTRAINT ck_relation_types_name CHECK (length(name) BETWEEN 1 AND 100),
+   859→    CONSTRAINT ck_relation_types_description CHECK (
+   860→        description IS NULL OR length(description) <= 4000
+   861→    )
+   862→);
+   863→
+   864→CREATE TABLE related_products (
+   865→    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   866→    product_id          uuid NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+   867→    related_product_id  uuid NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+   868→    relation_type_id    uuid NOT NULL REFERENCES relation_types(id) ON DELETE RESTRICT,
+   869→    weight              numeric(4, 2) NOT NULL DEFAULT 1.0,
+   870→    created_at          timestamptz NOT NULL DEFAULT now(),
+   871→    updated_at          timestamptz NOT NULL DEFAULT now(),
+   872→    deleted_at          timestamptz,
+   873→    CONSTRAINT uq_related_products UNIQUE (product_id, related_product_id, relation_type_id),
+   874→    CONSTRAINT ck_related_products_no_self CHECK (product_id <> related_product_id),
+   875→    CONSTRAINT ck_related_products_weight CHECK (weight >= 0 AND weight <= 10)
+   876→);
+   877→
+   878→-- ============================================================
+   879→-- SECTION 9 — SEO
+   880→-- ============================================================
+   881→
+   882→CREATE TYPE seo_page_kind AS ENUM ('product', 'ingredient', 'brand', 'comparison', 'editorial', 'category');
+   883→
+   884→CREATE TABLE seo_pages (
+   885→    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   886→    kind            seo_page_kind NOT NULL,
+   887→    slug            text NOT NULL,                   -- URL slug for the page
+   888→    entity_id       uuid,                            -- optional back-reference
+   889→    title           text NOT NULL,
+   890→    meta_title      text,
+   891→    meta_description text,
+   892→    canonical_url   text,
+   893→    robots          text NOT NULL DEFAULT 'index,follow',
+   894→    language        text NOT NULL DEFAULT 'en-US',
+   895→    structured_data jsonb,                           -- JSON-LD blob
+   896→    last_rendered_at timestamptz,
+   897→    created_at      timestamptz NOT NULL DEFAULT now(),
+   898→    updated_at      timestamptz NOT NULL DEFAULT now(),
+   899→    deleted_at      timestamptz,
+   900→    CONSTRAINT uq_seo_pages_kind_slug UNIQUE (kind, slug),
+   901→    CONSTRAINT uq_seo_pages_canonical UNIQUE (canonical_url),
+   902→    CONSTRAINT ck_seo_pages_slug CHECK (slug ~ '^[a-z0-9-]+(/[a-z0-9-]+)*$' AND length(slug) <= 512),
+   903→    CONSTRAINT ck_seo_pages_title CHECK (length(title) BETWEEN 1 AND 300),
+   904→    CONSTRAINT ck_seo_pages_meta_title CHECK (meta_title IS NULL OR length(meta_title) BETWEEN 1 AND 200),
+   905→    CONSTRAINT ck_seo_pages_meta_description CHECK (
+   906→        meta_description IS NULL OR length(meta_description) BETWEEN 1 AND 1000
+   907→    ),
+   908→    CONSTRAINT ck_seo_pages_robots CHECK (
+   909→        robots ~ '^([a-z]+(,[a-z]+)*)$'
+   910→    ),
+   911→    CONSTRAINT ck_seo_pages_language CHECK (language ~ '^[a-z]{2}(-[A-Z]{2})?$'),
+   912→    CONSTRAINT ck_seo_pages_canonical_url CHECK (
+   913→        canonical_url IS NULL OR canonical_url ~* '^https?://'
+   914→    ),
+   915→    CONSTRAINT ck_seo_pages_structured_data_obj CHECK (
+   916→        structured_data IS NULL OR jsonb_typeof(structured_data) = 'object'
+   917→    ),
+   918→    CONSTRAINT ck_seo_pages_structured_data_len CHECK (
+   919→        structured_data IS NULL OR length(structured_data::text) <= 50000
+   920→    )
+   921→);
+   922→
+   923→CREATE TABLE faq_items (
+   924→    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   925→    page_id      uuid NOT NULL REFERENCES seo_pages(id) ON DELETE CASCADE,
+   926→    question     text NOT NULL,
+   927→    answer       text NOT NULL,
+   928→    sort_order   integer NOT NULL DEFAULT 0,
+   929→    language     text NOT NULL DEFAULT 'en-US',
+   930→    created_at   timestamptz NOT NULL DEFAULT now(),
+   931→    updated_at   timestamptz NOT NULL DEFAULT now(),
+   932→    deleted_at   timestamptz,
+   933→    CONSTRAINT ck_faq_items_q_nonempty CHECK (length(question) BETWEEN 3 AND 500),
+   934→    CONSTRAINT ck_faq_items_a_nonempty CHECK (length(answer) BETWEEN 1 AND 4000),
+   935→    CONSTRAINT ck_faq_items_sort CHECK (sort_order >= 0)
+   936→);
+   937→
+   938→-- ============================================================
+   939→-- SECTION 10 — SYSTEM / AUDIT
+   940→-- ============================================================
+   941→
+   942→CREATE TYPE actor_type_t AS ENUM ('admin', 'system', 'user', 'job', 'service');
+   943→
+   944→CREATE TABLE audit_logs (
+   945→    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+   946→    occurred_at   timestamptz NOT NULL DEFAULT now(),
+   947→    actor_id      uuid,                              -- nullable for system-triggered events
+   948→    actor_type    actor_type_t,
+   949→    entity_type   text NOT NULL,
+   950→    entity_id     uuid NOT NULL,
+   951→    action        text NOT NULL,                     -- create / update / delete / publish / ...
+   952→    before        jsonb,
+   953→    after         jsonb,
+   954→    diff          jsonb GENERATED ALWAYS AS (
+   955→        CASE
+   956→            WHEN before IS NULL AND after IS NULL THEN NULL
+   957→            ELSE jsonb_build_object('before', before, 'after', after)
+   958→        END
+   959→    ) STORED,
+   960→    request_id    text,
+   961→    ip_address    inet,
+   962→    user_agent    text,
+   963→    CONSTRAINT ck_audit_logs_action_nonempty CHECK (length(action) BETWEEN 1 AND 64),
+   964→    CONSTRAINT ck_audit_logs_entity_nonempty CHECK (length(entity_type) BETWEEN 1 AND 64),
+   965→    CONSTRAINT ck_audit_logs_ip_or_null CHECK (ip_address IS NULL OR family(ip_address) IN (4, 6)),
+   966→    CONSTRAINT ck_audit_logs_before_size CHECK (
+   967→        before IS NULL OR length(before::text) <= 100000
+   968→    ),
+   969→    CONSTRAINT ck_audit_logs_after_size CHECK (
+   970→        after IS NULL OR length(after::text) <= 100000
+   971→    ),
+   972→    CONSTRAINT ck_audit_logs_request_id_len CHECK (
+   973→        request_id IS NULL OR length(request_id) BETWEEN 1 AND 64
+   974→    ),
+   975→    CONSTRAINT ck_audit_logs_user_agent_len CHECK (
+   976→        user_agent IS NULL OR length(user_agent) <= 512
+   977→    )
+   978→);
+   979→-- Partitioning strategy: see database/README.md. The column shape is
+   980→-- intentionally forward-compatible (occurred_at is the natural partition key).
+   981→-- A subsequent Sprint will execute:
+   982→--   ALTER TABLE audit_logs ... RANGE PARTITION BY occurred_at;
+   983→-- without changing application contracts (uuid id, occurred_at).
+   984→
+   985→-- ============================================================
+   986→-- SECTION 11 — GENERATED (STORED) COLUMNS
+   987→-- ------------------------------------------------------------
+   988→-- Full-text search vector columns are GENERATED ALWAYS AS ... STORED
+   989→-- and therefore belong in the schema DDL, not in the index layer.
+   990→-- GIN indexes on these columns are declared in indexes.sql.
+   991→-- ============================================================
+   992→
+   993→ALTER TABLE products
+   994→    ADD COLUMN IF NOT EXISTS search_vector tsvector
+   995→    GENERATED ALWAYS AS (
+   996→        setweight(to_tsvector('simple', coalesce(name, '')), 'A') ||
+   997→        setweight(to_tsvector('simple', coalesce(description, '')), 'B')
+   998→    ) STORED;
+   999→
+  1000→ALTER TABLE ingredients
+  1001→    ADD COLUMN IF NOT EXISTS search_vector tsvector
+  1002→    GENERATED ALWAYS AS (
+  1003→        setweight(to_tsvector('simple', coalesce(name, '')), 'A') ||
+  1004→        setweight(to_tsvector('simple', coalesce(canonical_name::text, '')), 'A') ||
+  1005→        setweight(to_tsvector('simple', coalesce(inci_name, '')), 'B')
+  1006→    ) STORED;
+  1007→
+  1008→ALTER TABLE brands
+  1009→    ADD COLUMN IF NOT EXISTS search_vector tsvector
+  1010→    GENERATED ALWAYS AS (
+  1011→        setweight(to_tsvector('simple', coalesce(name, '')), 'A') ||
+  1012→        setweight(to_tsvector('simple', coalesce(manufacturer, '')), 'B')
+  1013→    ) STORED;
+  1014→
+  1015→-- ============================================================
+  1016→-- END OF SCHEMA
+  1017→-- ============================================================
+  1018→-- Bot mitigation: prevent accidental direct UPDATE/DELETE on raw search logs in app code paths.
+  1019→-- (Audit table is append-only by convention.)
