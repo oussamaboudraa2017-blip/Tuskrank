@@ -13,9 +13,6 @@ import { ThrottlerByRoleGuard } from './guards/throttler-by-role.guard';
 import { LoggerCoreModule } from './logger/logger.module';
 import { APP_CONSTANTS } from './constants/app.constants';
 import { CacheService } from '@shared';
-import { BrandLoader, IngredientLoader } from './loaders';
-import { MetricsInterceptor } from './interceptors/metrics.interceptor';
-import { AuditLogInterceptor } from './interceptors/audit-log.interceptor';
 
 /**
  * Common cross-cutting module.
@@ -57,8 +54,8 @@ import { AuditLogInterceptor } from './interceptors/audit-log.interceptor';
     EnvelopeInterceptor,
     GlobalExceptionFilter,
     CacheService,
-    BrandLoader,
-    IngredientLoader,
+    // BrandLoader and IngredientLoader removed – they require repositories from BrandsModule/IngredientsModule.
+    // You can re-add them later after importing the appropriate modules.
     {
       provide: APP_FILTER,
       useExisting: GlobalExceptionFilter,
@@ -79,14 +76,15 @@ import { AuditLogInterceptor } from './interceptors/audit-log.interceptor';
       provide: APP_INTERCEPTOR,
       useExisting: TimeoutInterceptor,
     },
-    {
-      provide: APP_INTERCEPTOR,
-      useExisting: MetricsInterceptor,
-    },
-    {
-      provide: APP_INTERCEPTOR,
-      useExisting: AuditLogInterceptor,
-    },
+    // MetricsInterceptor and AuditLogInterceptor are also removed – they need MetricsModule.
+    // {
+    //   provide: APP_INTERCEPTOR,
+    //   useClass: MetricsInterceptor,
+    // },
+    // {
+    //   provide: APP_INTERCEPTOR,
+    //   useClass: AuditLogInterceptor,
+    // },
     {
       provide: APP_INTERCEPTOR,
       useExisting: EnvelopeInterceptor,
@@ -101,10 +99,7 @@ import { AuditLogInterceptor } from './interceptors/audit-log.interceptor';
     SupabaseAuthGuard,
     RolesGuard,
     CacheService,
-    BrandLoader,
-    IngredientLoader,
-    MetricsInterceptor,
-    AuditLogInterceptor,
+    // BrandLoader, IngredientLoader removed
     RequestLoggingInterceptor,
     TimeoutInterceptor,
     EnvelopeInterceptor,

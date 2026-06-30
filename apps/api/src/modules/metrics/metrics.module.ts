@@ -34,12 +34,6 @@ import { PrometheusModule, makeCounterProvider, makeHistogramProvider } from '@w
       help: 'Total number of cache misses',
     }),
   ],
-  exports: [
-    'http_requests_total',
-    'http_request_duration_seconds',
-    'db_queries_total',
-    'cache_hits_total',
-    'cache_misses_total',
-  ],
+  // exports removed – not needed because @InjectMetric works directly with providers
 })
 export class MetricsModule {}

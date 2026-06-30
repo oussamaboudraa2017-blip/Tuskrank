@@ -1,7 +1,5 @@
 import { Module } from '@nestjs/common';
 import { CacheModule } from '@nestjs/cache-manager';
-import { ConfigService } from '@nestjs/config';
-import { redisStore } from 'cache-manager-redis-yet';
 import { I18nModule, AcceptLanguageResolver, QueryResolver } from 'nestjs-i18n';
 import { AppConfigModule } from '@config';
 import { CommonModule } from '@common';
@@ -20,32 +18,15 @@ import * as path from 'path';
 @Module({
   imports: [
     AppConfigModule,
-    CacheModule.registerAsync({
+    // CacheModule – uses in-memory storage (no Redis required)
+    CacheModule.register({
       isGlobal: true,
-      inject: [ConfigService],
-      useFactory: async (cfg: ConfigService) => {
-        const host = cfg.get<string>('REDIS_HOST', 'localhost');
-        const port = cfg.get<number>('REDIS_PORT', 6379);
-        const password = cfg.get<string>('REDIS_PASSWORD');
-        const db = cfg.get<number>('REDIS_DB', 0);
-        const ttl = cfg.get<number>('REDIS_TTL_MS', 60_000);
-        try {
-          const store = await redisStore({
-            socket: { host, port },
-            password: password || undefined,
-            database: db,
-            ttl,
-          });
-          return { store, ttl };
-        } catch {
-          return { ttl };
-        }
-      },
+      ttl: 60000, // 60 seconds
     }),
     I18nModule.forRoot({
       fallbackLanguage: 'en',
       loaderOptions: {
-        path: path.join(__dirname, '/i18n/'),
+        path: path.join(__dirname, '../src/i18n/'),
         watch: true,
       },
       resolvers: [
