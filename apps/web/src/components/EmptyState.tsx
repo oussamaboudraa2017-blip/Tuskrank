@@ -1,3 +1,7 @@
+import { PackageSearch } from 'lucide-react';
+import Link from 'next/link';
+import { Button } from '@/components/ui/button';
+
 interface EmptyStateProps {
   title?: string;
   message?: string;
@@ -10,17 +14,16 @@ export function EmptyState({
   action,
 }: EmptyStateProps) {
   return (
-    <div className="flex min-h-[30vh] flex-col items-center justify-center px-4 text-center">
-      <div className="mb-4 text-4xl opacity-30">&#x1F50D;</div>
-      <h3 className="text-lg font-semibold text-[var(--text)]">{title}</h3>
-      <p className="mt-2 max-w-md text-[var(--text-secondary)]">{message}</p>
+    <div className="flex min-h-[40vh] flex-col items-center justify-center px-4 text-center">
+      <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-muted">
+        <PackageSearch className="h-8 w-8 text-muted-foreground" />
+      </div>
+      <h3 className="text-xl font-semibold">{title}</h3>
+      <p className="mt-2 max-w-md text-sm text-muted-foreground">{message}</p>
       {action && (
-        <a
-          href={action.href}
-          className="mt-4 rounded-lg bg-[var(--ring)] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-        >
-          {action.label}
-        </a>
+        <Link href={action.href}>
+          <Button className="mt-6">{action.label}</Button>
+        </Link>
       )}
     </div>
   );

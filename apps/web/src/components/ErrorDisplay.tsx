@@ -1,4 +1,6 @@
+import { AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
+import { Button } from '@/components/ui/button';
 
 interface ErrorProps {
   title?: string;
@@ -12,23 +14,20 @@ export function ErrorDisplay({
   onRetry,
 }: ErrorProps) {
   return (
-    <div className="flex min-h-[40vh] flex-col items-center justify-center px-4 text-center">
-      <h2 className="text-xl font-semibold text-[var(--text)]">{title}</h2>
-      <p className="mt-2 max-w-md text-[var(--text-secondary)]">{message}</p>
+    <div className="flex min-h-[50vh] flex-col items-center justify-center px-4 text-center">
+      <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-destructive/10">
+        <AlertTriangle className="h-8 w-8 text-destructive" />
+      </div>
+      <h2 className="text-xl font-semibold">{title}</h2>
+      <p className="mt-2 max-w-md text-sm text-muted-foreground">{message}</p>
       <div className="mt-6 flex gap-3">
         {onRetry && (
-          <button
-            onClick={onRetry}
-            className="rounded-lg bg-[var(--ring)] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-          >
+          <Button variant="default" onClick={onRetry}>
             Try Again
-          </button>
+          </Button>
         )}
-        <Link
-          href="/"
-          className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium hover:bg-[var(--bg-secondary)]"
-        >
-          Back to Home
+        <Link href="/">
+          <Button variant="outline">Back to Home</Button>
         </Link>
       </div>
     </div>
