@@ -1,11 +1,27 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Uuid } from '@types';
-import { ProductsRepository } from './repositories/products.repository';
+import {
+  ProductsReadRepository,
+  ProductsWriteRepository,
+  ProductsSearchRepository,
+  ProductLookupRepository,
+} from './repositories/products.repository';
 import { BrandsRepository } from './repositories/brands.repository';
-import type { Product, ProductSummary } from './domain/types';
+import { ProductMapper } from './domain/mapping/product.mapper';
+import type { ProductQuery, ProductSearchInput } from './domain/interfaces/product-query.interface';
+import {
+  ProductSortField,
+  SortOrder,
+} from './domain/enums';
+import {
+  ProductNotFoundError,
+  ProductSlugCollisionError,
+  ProductUpcCollisionError,
+  ProductSkuCollisionError,
+  BrandNotFoundError,
+} from './domain/errors';
+import { ProductEntity } from './domain/product.entity';
 import type {
-  ProductQuery,
-  ProductSearchInput,
   ProductListFilters,
   ProductSort,
   ProductPagination,
@@ -15,92 +31,61 @@ import {
   FoodFormSlug,
   LifeStageSlug,
   PetTypeSlug,
-  ProductSortField,
   ProteinOrigin,
-  SortOrder,
 } from './domain/enums';
-import {
-  ProductNotFoundError,
-  ProductSlugCollisionError,
-  ProductUpcCollisionError,
-  ProductSkuCollisionError,
-  BrandNotFoundError,
-  ProductInvalidLifecycleTransitionError,
-  ProductSoftDeletedError,
-} from './domain/errors';
+import type { ProductRow } from './domain/mapping/product.db-model';
 
-/**
- * Products service — business orchestration layer.
- *
- * The service is the ONLY layer that calls repositories. Controllers
- * must never inject repositories directly. This keeps transactions
- * scoped to a single use case.
- */
 @Injectable()
 export class ProductsService {
   private readonly logger = new Logger(ProductsService.name);
 
   constructor(
-    private readonly products: ProductsRepository,
+    private readonly readRepo: ProductsReadRepository,
+    private readonly writeRepo: ProductsWriteRepository,
+    private readonly searchRepo: ProductsSearchRepository,
+    private readonly lookupRepo: ProductLookupRepository,
     private readonly brands: BrandsRepository,
   ) {}
 
   /* ================================================================
-   * Read (public)
+   * Read
    * ================================================================ */
 
-  /** GET /api/v1/products/:slug */
-  async findBySlug(slug: string): Promise<Product> {
-    const product = await this.products.findBySlug(slug);
-    if (!product) throw new ProductNotFoundError(slug);
-    return product;
+  async findBySlug(slug: string): Promise<ProductEntity> {
+    const row = await this.readRepo.findBySlug(slug);
+    if (!row) throw new ProductNotFoundError(slug);
+    const hydrated = await this.readRepo.hydrateSingle(row);
+    return ProductMapper.dbToDomain(hydrated);
   }
 
-  /** GET /api/v1/products/:slug (admin — includes soft-deleted + unpublished) */
-  async findBySlugAdmin(slug: string): Promise<Product> {
-    const product = await this.products.findBySlug(slug, {
-      includeSoftDeleted: true,
-      includeUnpublished: true,
-    });
-    if (!product) throw new ProductNotFoundError(slug);
-    return product;
+  async list(query: ProductQuery): Promise<{ items: ProductEntity[]; total: number }> {
+    const { rows, total } = await this.readRepo.findMany(query);
+    const hydrated = await this.readRepo.batchHydrate(rows);
+    return {
+      items: hydrated.map((r) => ProductMapper.dbToDomain(r)),
+      total,
+    };
   }
 
-  /** GET /api/v1/products (paginated list) */
-  async list(query: ProductQuery): Promise<{ items: ReadonlyArray<Product>; total: number }> {
-    const [items, total] = await Promise.all([
-      this.products.findMany(query),
-      this.products.count(query),
-    ]);
-    return { items, total };
-  }
-
-  /** GET /api/v1/products (featured) */
   async findFeatured(
     pagination: { page: number; limit: number },
     options?: { petType?: string },
-  ): Promise<ReadonlyArray<Product>> {
-    return this.products.findFeatured(pagination, options);
+  ): Promise<ProductEntity[]> {
+    const rows = await this.readRepo.findFeatured(pagination, options);
+    const hydrated = await this.readRepo.batchHydrate(rows);
+    return hydrated.map((r) => ProductMapper.dbToDomain(r));
   }
 
-  /** GET /api/v1/products (top-rated from materialized view) */
-  async findTopRated(
-    pagination: { page: number; limit: number },
-    options?: { petType?: string; minScore?: number },
-  ): Promise<ReadonlyArray<Product>> {
-    return this.products.findTopRated(pagination, options);
-  }
-
-  /** GET /api/v1/products/search?q=... */
-  async search(input: ProductSearchInput): Promise<ReadonlyArray<Product>> {
-    return this.products.search(input);
+  async search(input: ProductSearchInput): Promise<ProductEntity[]> {
+    const rows = await this.searchRepo.search(input);
+    const hydrated = await this.readRepo.batchHydrate(rows);
+    return hydrated.map((r) => ProductMapper.dbToDomain(r));
   }
 
   /* ================================================================
-   * Mutations (admin)
+   * Mutations
    * ================================================================ */
 
-  /** POST /api/v1/products */
   async create(input: {
     brandId: Uuid;
     name: string;
@@ -114,36 +99,25 @@ export class ProductsService {
     primaryProteinSourceId?: Uuid | null;
     isActive?: boolean;
     publishImmediately?: boolean;
-  }): Promise<Product> {
-    // 1. Verify brand exists
-    const brand = await this.brands.findById(input.brandId as Uuid);
+  }): Promise<ProductEntity> {
+    const brand = await this.brands.findById(input.brandId);
     if (!brand) throw new BrandNotFoundError(input.brandId);
 
-    // 2. Check (brand, slug) uniqueness
-    const slugExists = await this.products.existsByBrandSlug(
-      input.brandId as Uuid,
-      input.slug,
-    );
-    if (slugExists) throw new ProductSlugCollisionError(input.brandId as Uuid, input.slug);
+    const slugExists = await this.readRepo.existsByBrandSlug(input.brandId, input.slug);
+    if (slugExists) throw new ProductSlugCollisionError(input.brandId, input.slug);
 
-    // 3. Check UPC uniqueness (if provided)
     if (input.upc) {
-      const upcExists = await this.products.existsByUpc(input.upc);
+      const upcExists = await this.readRepo.existsByUpc(input.upc);
       if (upcExists) throw new ProductUpcCollisionError(input.upc);
     }
 
-    // 4. Check (brand, SKU) uniqueness (if provided)
     if (input.sku) {
-      const skuExists = await this.products.existsByBrandSku(
-        input.brandId as Uuid,
-        input.sku,
-      );
-      if (skuExists) throw new ProductSkuCollisionError(input.brandId as Uuid, input.sku);
+      const skuExists = await this.readRepo.existsByBrandSku(input.brandId, input.sku);
+      if (skuExists) throw new ProductSkuCollisionError(input.brandId, input.sku);
     }
 
-    // 5. Create
-    const product = await this.products.create({
-      brandId: input.brandId as Uuid,
+    const row = await this.writeRepo.create({
+      brandId: input.brandId,
       name: input.name,
       slug: input.slug,
       description: input.description,
@@ -151,21 +125,21 @@ export class ProductsService {
       sku: input.sku,
       packageSizeGrams: input.packageSizeGrams,
       packageSizeLabel: input.packageSizeLabel,
-      foodFormId: input.foodFormId as Uuid | null,
-      primaryProteinSourceId: input.primaryProteinSourceId as Uuid | null,
+      foodFormId: input.foodFormId,
+      primaryProteinSourceId: input.primaryProteinSourceId,
       isActive: input.isActive,
     });
 
-    // 6. Publish immediately if requested
     if (input.publishImmediately) {
-      await this.products.publish(product.id);
+      await this.writeRepo.publish(row.id);
     }
 
-    this.logger.log(`Created product ${product.id} (${product.slug})`);
-    return this.products.findById(product.id, { includeUnpublished: true }) as Promise<Product>;
+    this.logger.log(`Created product ${row.id} (${row.slug})`);
+
+    const hydrated = await this.readRepo.hydrateSingle(row);
+    return ProductMapper.dbToDomain(hydrated);
   }
 
-  /** PATCH /api/v1/products/:productId */
   async update(
     productId: Uuid,
     patch: {
@@ -179,94 +153,74 @@ export class ProductsService {
       primaryProteinSourceId?: Uuid | null;
       isActive?: boolean;
     },
-  ): Promise<Product> {
-    const existing = await this.products.findById(productId, {
-      includeUnpublished: true,
-      includeSoftDeleted: true,
-    });
+  ): Promise<ProductEntity> {
+    const existing = await this.readRepo.findById(productId);
     if (!existing) throw new ProductNotFoundError(productId);
 
-    // Check slug uniqueness (if changing)
-    if (patch.name !== undefined) {
-      // slug is not directly updatable in the current schema (UNIQUE per brand)
-      // but name changes don't affect slug — slug is set at creation only.
+    if (patch.upc !== undefined && patch.upc !== null && patch.upc !== existing.upc) {
+      const exists = await this.readRepo.existsByUpc(patch.upc, productId);
+      if (exists) throw new ProductUpcCollisionError(patch.upc);
     }
 
-    // Check UPC uniqueness (if changing)
-    if (patch.upc !== undefined && patch.upc !== null && patch.upc !== (existing.upc as unknown as string | null)) {
-      const upcExists = await this.products.existsByUpc(patch.upc, productId);
-      if (upcExists) throw new ProductUpcCollisionError(patch.upc);
+    if (patch.sku !== undefined && patch.sku !== null && patch.sku !== existing.sku) {
+      const exists = await this.readRepo.existsByBrandSku(existing.brand_id, patch.sku, productId);
+      if (exists) throw new ProductSkuCollisionError(existing.brand_id, patch.sku);
     }
 
-    // Check (brand, SKU) uniqueness (if changing)
-    if (patch.sku !== undefined && patch.sku !== null && patch.sku !== (existing.sku as unknown as string | null)) {
-      const skuExists = await this.products.existsByBrandSku(
-        existing.brandId,
-        patch.sku,
-        productId,
-      );
-      if (skuExists) throw new ProductSkuCollisionError(existing.brandId, patch.sku);
-    }
+    await this.writeRepo.update(productId, patch);
 
-    const updated = await this.products.update(productId, patch);
-    this.logger.log(`Updated product ${productId}`);
-    return updated;
+    const updated = await this.readRepo.findById(productId);
+    if (!updated) throw new ProductNotFoundError(productId);
+    const hydrated = await this.readRepo.hydrateSingle(updated);
+    return ProductMapper.dbToDomain(hydrated);
   }
 
-  /** POST /api/v1/products/:productId/publish */
-  async publish(productId: Uuid, publishAt?: Date): Promise<Product> {
-    const existing = await this.products.findById(productId, {
-      includeUnpublished: true,
-      includeSoftDeleted: true,
-    });
+  async publish(productId: Uuid, publishAt?: Date): Promise<ProductEntity> {
+    const existing = await this.readRepo.findById(productId);
     if (!existing) throw new ProductNotFoundError(productId);
 
-    await this.products.publish(productId, publishAt);
+    await this.writeRepo.publish(productId, publishAt);
     this.logger.log(`Published product ${productId}`);
-    return this.products.findById(productId, { includeUnpublished: true }) as Promise<Product>;
+
+    const updated = await this.readRepo.findById(productId);
+    if (!updated) throw new ProductNotFoundError(productId);
+    const hydrated = await this.readRepo.hydrateSingle(updated);
+    return ProductMapper.dbToDomain(hydrated);
   }
 
-  /** POST /api/v1/products/:productId/unpublish */
-  async unpublish(productId: Uuid): Promise<Product> {
-    const existing = await this.products.findById(productId, {
-      includeUnpublished: true,
-      includeSoftDeleted: true,
-    });
+  async unpublish(productId: Uuid): Promise<ProductEntity> {
+    const existing = await this.readRepo.findById(productId);
     if (!existing) throw new ProductNotFoundError(productId);
 
-    await this.products.unpublish(productId);
+    await this.writeRepo.unpublish(productId);
     this.logger.log(`Unpublished product ${productId}`);
-    return this.products.findById(productId, { includeUnpublished: true }) as Promise<Product>;
+
+    const updated = await this.readRepo.findById(productId);
+    if (!updated) throw new ProductNotFoundError(productId);
+    const hydrated = await this.readRepo.hydrateSingle(updated);
+    return ProductMapper.dbToDomain(hydrated);
   }
 
-  /** POST /api/v1/products/:productId/soft-delete */
   async softDelete(productId: Uuid): Promise<void> {
-    const existing = await this.products.findById(productId, {
-      includeUnpublished: true,
-      includeSoftDeleted: true,
-    });
+    const existing = await this.readRepo.findById(productId);
     if (!existing) throw new ProductNotFoundError(productId);
 
-    await this.products.softDelete(productId);
+    await this.writeRepo.softDelete(productId);
     this.logger.log(`Soft-deleted product ${productId}`);
   }
 
-  /** POST /api/v1/products/:productId/restore */
-  async restore(productId: Uuid): Promise<Product> {
-    const existing = await this.products.findById(productId, {
-      includeUnpublished: true,
-      includeSoftDeleted: true,
-    });
+  async restore(productId: Uuid): Promise<ProductEntity> {
+    const existing = await this.readRepo.findById(productId);
     if (!existing) throw new ProductNotFoundError(productId);
 
-    await this.products.restore(productId);
+    await this.writeRepo.restore(productId);
     this.logger.log(`Restored product ${productId}`);
-    return this.products.findById(productId, { includeUnpublished: true }) as Promise<Product>;
-  }
 
-  /* ================================================================
-   * Helpers
-   * ================================================================ */
+    const updated = await this.readRepo.findById(productId);
+    if (!updated) throw new ProductNotFoundError(productId);
+    const hydrated = await this.readRepo.hydrateSingle(updated);
+    return ProductMapper.dbToDomain(hydrated);
+  }
 
   buildQueryFromDto(params: {
     page?: number;
@@ -307,11 +261,7 @@ export class ProductsService {
       order: params.sortOrder === 'asc' ? SortOrder.Asc : SortOrder.Desc,
     };
 
-    const pagination: ProductPagination = {
-      page,
-      limit,
-      total: 0, // computed by repository
-    };
+    const pagination: ProductPagination = { page, limit, total: 0 };
 
     return { filters, sort, pagination };
   }

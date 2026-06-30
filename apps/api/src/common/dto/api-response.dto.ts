@@ -66,5 +66,5 @@ export function paginatedResponse<T>(
       timestamp: new Date().toISOString(),
       ...meta,
     },
-  } as Omit<ApiPaginatedResponseDto<T>, 'success'>;
+  };
 }

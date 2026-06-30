@@ -387,10 +387,10 @@ export const ProductMapper = {
       primaryProteinSource: product.primaryProteinSource,
       packageSizeGrams: 'packageSize' in product
         ? (product.packageSize?.grams ?? null)
-        : (product as Product).packageSizeGrams ?? null,
+        : (product).packageSizeGrams ?? null,
       packageSizeLabel: 'packageSize' in product
         ? (product.packageSize?.label ?? null)
-        : (product as Product).packageSizeLabel ?? null,
+        : (product).packageSizeLabel ?? null,
       isActive: product.isActive,
       publishedAt: product.publishedAt,
       createdAt: product.createdAt,

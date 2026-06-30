@@ -86,7 +86,7 @@ export function buildPinoParams(
       genReqId: (req: IncomingMessage & { id?: string }) => {
         const header = req.headers[APP_CONSTANTS.HEADERS.REQUEST_ID];
         const incoming = Array.isArray(header) ? header[0] : header;
-        return (incoming ?? (req.id as string) ?? randomUUID()).toString();
+        return (incoming ?? (req.id) ?? randomUUID()).toString();
       },
       autoLogging: nodeEnv !== 'test',
     },

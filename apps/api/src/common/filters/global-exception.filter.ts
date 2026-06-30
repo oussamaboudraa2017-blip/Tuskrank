@@ -94,7 +94,7 @@ if (exception instanceof Error) {
         status,
         payload: {
           code:
-            (typeof body?.error === 'string' && (body.error as string)) ||
+            (typeof body?.error === 'string' && (body.error)) ||
             this.codeForStatus(status),
           message:
             (Array.isArray(body?.message)

@@ -72,7 +72,7 @@ export class ProductsController {
     const listItems = items.map((p) => ProductMapper.domainToListItem(p));
     const meta = buildPaginationMeta(page, limit, total, productQuery.sort.by, productQuery.sort.order);
 
-    return paginatedResponse({ data: listItems as ProductListItemDto[], meta });
+    return paginatedResponse({ data: listItems, meta });
   }
 
   /* ================================================================

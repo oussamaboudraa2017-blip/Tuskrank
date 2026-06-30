@@ -21,7 +21,7 @@ export class EnvelopeInterceptor<T> implements NestInterceptor<T, ApiSuccessResp
         return okResponse(data, {
           traceId: req?.id,
           apiVersion: req?.apiVersion,
-        }) as ApiSuccessResponseDto<T>;
+        });
       }),
     );
   }

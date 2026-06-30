@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { DatabaseModule } from '@database';
 import { BrandsController } from './brands.controller';
 import { BrandsService } from './brands.service';
-import { BrandsRepository } from './brands.repository';
+import { BrandsReadRepository, BrandsWriteRepository } from './brands.repository';
 
 /**
  * Brands module — CRUD, search, featured, lifecycle transitions.
@@ -23,7 +23,7 @@ import { BrandsRepository } from './brands.repository';
 @Module({
   imports: [DatabaseModule],
   controllers: [BrandsController],
-  providers: [BrandsRepository, BrandsService],
+  providers: [BrandsReadRepository, BrandsWriteRepository, BrandsService],
   exports: [BrandsService],
 })
 export class BrandsModule {}

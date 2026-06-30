@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { DatabaseModule } from '@database';
 import { IngredientsController } from './ingredients.controller';
 import { IngredientsService } from './ingredients.service';
-import { IngredientsRepository } from './ingredients.repository';
+import { IngredientsReadRepository, IngredientsWriteRepository } from './ingredients.repository';
 
 /**
  * Ingredients module — CRUD, categories, scores, related products.
@@ -29,7 +29,7 @@ import { IngredientsRepository } from './ingredients.repository';
 @Module({
   imports: [DatabaseModule],
   controllers: [IngredientsController],
-  providers: [IngredientsRepository, IngredientsService],
+  providers: [IngredientsReadRepository, IngredientsWriteRepository, IngredientsService],
   exports: [IngredientsService],
 })
 export class IngredientsModule {}

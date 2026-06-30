@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { BrandsRepository } from './brands.repository';
+import { BrandsReadRepository, BrandsWriteRepository } from './brands.repository';
+import type { BrandRow } from './brands.repository';
 import type { BrandQuery, BrandSearchInput } from './domain/interfaces';
 import { BrandSortField, SortOrder } from './domain/enums';
 import {
@@ -10,7 +11,6 @@ import {
 } from './domain/errors';
 import { BRAND_BOUNDS } from './domain/constants';
 import type { Uuid } from '@types';
-import type { BrandRow } from './brands.repository';
 
 /**
  * Brands service — business orchestration.
@@ -21,41 +21,44 @@ import type { BrandRow } from './brands.repository';
 export class BrandsService {
   private readonly logger = new Logger(BrandsService.name);
 
-  constructor(private readonly repo: BrandsRepository) {}
+  constructor(
+    private readonly readRepo: BrandsReadRepository,
+    private readonly writeRepo: BrandsWriteRepository,
+  ) {}
 
   /* ================================================================
    * Read methods
    * ================================================================ */
 
   async findBySlug(slug: string) {
-    const row = await this.repo.findBySlug(slug);
+    const row = await this.readRepo.findBySlug(slug);
     if (!row) throw new BrandNotFoundError(slug);
     return this.toDomain(row);
   }
 
   async findById(id: Uuid) {
-    const row = await this.repo.findById(id);
-    if (!row) throw new BrandNotFoundError(id as string);
+    const row = await this.readRepo.findById(id);
+    if (!row) throw new BrandNotFoundError(id);
     return this.toDomain(row);
   }
 
   async list(query: BrandQuery) {
     const [rows, total] = await Promise.all([
-      this.repo.findMany(query),
-      this.repo.count(query.filters),
+      this.readRepo.findMany(query),
+      this.readRepo.count(query.filters),
     ]);
     const summaries = rows.map((r) => this.toSummary(r));
     return { items: summaries, total };
   }
 
   async search(input: BrandSearchInput) {
-    const { items: rows, total } = await this.repo.search(input);
+    const { items: rows, total } = await this.readRepo.search(input);
     const summaries = rows.map((r) => this.toSummary(r));
     return { items: summaries, total };
   }
 
   async findFeatured(limit = 10) {
-    const rows = await this.repo.findFeatured(limit);
+    const rows = await this.readRepo.findFeatured(limit);
     return rows.map((r) => this.toSummary(r));
   }
 
@@ -75,11 +78,11 @@ export class BrandsService {
   }) {
     const slug = data.slug ?? this.slugify(data.name);
 
-    if (await this.repo.existsBySlug(slug)) {
+    if (await this.readRepo.existsBySlug(slug)) {
       throw new BrandSlugCollisionError(slug);
     }
 
-    const row = await this.repo.create({ ...data, slug });
+    const row = await this.writeRepo.create({ ...data, slug });
     this.logger.log(`Created brand ${row.id} (${row.name})`);
     return this.toDomain(row);
   }
@@ -97,58 +100,58 @@ export class BrandsService {
       isActive?: boolean;
     },
   ) {
-    const existing = await this.repo.findById(id);
-    if (!existing) throw new BrandNotFoundError(id as string);
+    const existing = await this.readRepo.findById(id);
+    if (!existing) throw new BrandNotFoundError(id);
 
     if (data.slug && data.slug !== existing.slug) {
-      if (await this.repo.existsBySlug(data.slug, id)) {
+      if (await this.readRepo.existsBySlug(data.slug, id)) {
         throw new BrandSlugCollisionError(data.slug);
       }
     }
 
-    const row = await this.repo.update(id, data);
+    const row = await this.writeRepo.update(id, data);
     this.logger.log(`Updated brand ${id}`);
     return this.toDomain(row);
   }
 
   async softDelete(id: Uuid) {
-    const existing = await this.repo.findById(id);
-    if (!existing) throw new BrandNotFoundError(id as string);
+    const existing = await this.readRepo.findById(id);
+    if (!existing) throw new BrandNotFoundError(id);
 
-    const productCount = await this.repo.countProducts(id);
+    const productCount = await this.readRepo.countProducts(id);
     if (productCount > 0) {
       throw new BrandHasProductsError();
     }
 
-    await this.repo.softDelete(id);
+    await this.writeRepo.softDelete(id);
     this.logger.log(`Soft-deleted brand ${id}`);
   }
 
   async restore(id: Uuid) {
-    const existing = await this.repo.findById(id, { includeSoftDeleted: true });
-    if (!existing) throw new BrandNotFoundError(id as string);
+    const existing = await this.readRepo.findById(id, { includeSoftDeleted: true });
+    if (!existing) throw new BrandNotFoundError(id);
     if (!existing.deleted_at) {
       throw new BrandInvalidLifecycleTransitionError('active', 'restore');
     }
-    await this.repo.restore(id);
+    await this.writeRepo.restore(id);
     this.logger.log(`Restored brand ${id}`);
     return this.findById(id);
   }
 
   async activate(id: Uuid) {
-    const existing = await this.repo.findById(id);
-    if (!existing) throw new BrandNotFoundError(id as string);
+    const existing = await this.readRepo.findById(id);
+    if (!existing) throw new BrandNotFoundError(id);
     if (existing.is_active) return this.toDomain(existing);
-    const row = await this.repo.update(id, { isActive: true });
+    const row = await this.writeRepo.update(id, { isActive: true });
     this.logger.log(`Activated brand ${id}`);
     return this.toDomain(row);
   }
 
   async deactivate(id: Uuid) {
-    const existing = await this.repo.findById(id);
-    if (!existing) throw new BrandNotFoundError(id as string);
+    const existing = await this.readRepo.findById(id);
+    if (!existing) throw new BrandNotFoundError(id);
     if (!existing.is_active) return this.toDomain(existing);
-    const row = await this.repo.update(id, { isActive: false });
+    const row = await this.writeRepo.update(id, { isActive: false });
     this.logger.log(`Deactivated brand ${id}`);
     return this.toDomain(row);
   }

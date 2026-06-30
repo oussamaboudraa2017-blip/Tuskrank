@@ -57,7 +57,7 @@ export class ScoringController {
   @ApiOperation({ summary: 'Score multiple products in a batch.' })
   async bulkScore(@Body() dto: BulkScoreDto) {
     const config: ScoringConfig = {
-      weights: dto.weights as ScoringConfig['weights'],
+      weights: dto.weights,
       includeReasoning: dto.includeReasoning,
     };
     const result = await this.scoringService.bulkScore(
@@ -128,7 +128,7 @@ export class ScoringController {
     }
 
     return {
-      weights: Object.keys(weights).length > 0 ? weights as ScoringConfig['weights'] : undefined,
+      weights: Object.keys(weights).length > 0 ? weights : undefined,
       includeReasoning: dto.includeReasoning,
     };
   }

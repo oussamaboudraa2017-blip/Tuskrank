@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { IngredientsRepository } from './ingredients.repository';
+import { IngredientsReadRepository, IngredientsWriteRepository } from './ingredients.repository';
 import { IngredientMapper } from './domain/mapping';
 import type { IngredientQuery, IngredientSearchInput } from './domain/interfaces';
 import type { IngredientSortField, SortOrder } from './domain/enums';
@@ -26,35 +26,38 @@ import type { Uuid } from '@types';
 export class IngredientsService {
   private readonly logger = new Logger(IngredientsService.name);
 
-  constructor(private readonly repo: IngredientsRepository) {}
+  constructor(
+    private readonly readRepo: IngredientsReadRepository,
+    private readonly writeRepo: IngredientsWriteRepository,
+  ) {}
 
   /* ================================================================
    * Read methods
    * ================================================================ */
 
   async findBySlug(slug: string) {
-    const row = await this.repo.findBySlug(slug);
+    const row = await this.readRepo.findBySlug(slug);
     if (!row) throw new IngredientNotFoundError(slug);
     return IngredientMapper.rowToIngredient(row);
   }
 
   async findById(id: Uuid) {
-    const row = await this.repo.findById(id);
+    const row = await this.readRepo.findById(id);
     if (!row) throw new IngredientNotFoundError(id);
     return IngredientMapper.rowToIngredient(row);
   }
 
   async list(query: IngredientQuery) {
     const [rows, total] = await Promise.all([
-      this.repo.findMany(query),
-      this.repo.count(query.filters),
+      this.readRepo.findMany(query),
+      this.readRepo.count(query.filters),
     ]);
     const summaries = rows.map((r) => IngredientMapper.rowToSummary(r));
     return { items: summaries, total };
   }
 
   async search(input: IngredientSearchInput) {
-    const { items: rows, total } = await this.repo.search(input);
+    const { items: rows, total } = await this.readRepo.search(input);
     const summaries = rows.map((r) => IngredientMapper.rowToSummary(r));
     return { items: summaries, total };
   }
@@ -64,19 +67,19 @@ export class IngredientsService {
    * ================================================================ */
 
   async findCategoryById(id: Uuid) {
-    const row = await this.repo.findCategoryById(id);
+    const row = await this.readRepo.findCategoryById(id);
     if (!row) throw new IngredientCategoryNotFoundError(id);
     return IngredientMapper.rowToCategory(row);
   }
 
   async findCategoryBySlug(slug: string) {
-    const row = await this.repo.findCategoryBySlug(slug);
+    const row = await this.readRepo.findCategoryBySlug(slug);
     if (!row) throw new IngredientCategoryNotFoundError(slug);
     return IngredientMapper.rowToCategory(row);
   }
 
   async listCategories() {
-    const rows = await this.repo.findCategories();
+    const rows = await this.readRepo.findCategories();
     const categories = rows.map((r) => IngredientMapper.rowToCategory(r));
     return IngredientMapper.buildCategoryTree(categories);
   }
@@ -87,19 +90,19 @@ export class IngredientsService {
 
   async findRelatedProducts(ingredientId: Uuid, options: { limit?: number; offset?: number } = {}) {
     await this.findById(ingredientId); // verify exists
-    const rows = await this.repo.findRelatedProducts(ingredientId, options);
+    const rows = await this.readRepo.findRelatedProducts(ingredientId, options);
     return rows.map((r) => IngredientMapper.rowToProductIngredientEntry(r));
   }
 
   async findReferences(ingredientId: Uuid) {
     await this.findById(ingredientId); // verify exists
-    const rows = await this.repo.findReferences(ingredientId);
+    const rows = await this.readRepo.findReferences(ingredientId);
     return rows.map((r) => IngredientMapper.rowToReference(r));
   }
 
   async findScoreHistory(ingredientId: Uuid) {
     await this.findById(ingredientId); // verify exists
-    return this.repo.findScoreHistory(ingredientId);
+    return this.readRepo.findScoreHistory(ingredientId);
   }
 
   /* ================================================================
@@ -120,16 +123,16 @@ export class IngredientsService {
   }) {
     // Check slug uniqueness
     const slug = data.slug ?? this.slugify(data.name);
-    if (await this.repo.existsBySlug(slug)) {
+    if (await this.readRepo.existsBySlug(slug)) {
       throw new IngredientSlugCollisionError(slug);
     }
 
     // Check canonical name uniqueness
-    if (await this.repo.existsByCanonicalName(data.canonicalName)) {
+    if (await this.readRepo.existsByCanonicalName(data.canonicalName)) {
       throw new IngredientCanonicalNameCollisionError(data.canonicalName);
     }
 
-    const row = await this.repo.create({ ...data, slug });
+    const row = await this.writeRepo.create({ ...data, slug });
     this.logger.log(`Created ingredient ${row.id} (${row.name})`);
     return IngredientMapper.rowToIngredient(row);
   }
@@ -149,60 +152,60 @@ export class IngredientsService {
       isActive?: boolean;
     },
   ) {
-    const existing = await this.repo.findById(id);
+    const existing = await this.readRepo.findById(id);
     if (!existing) throw new IngredientNotFoundError(id);
 
     // Check slug uniqueness if changed
     if (data.slug && data.slug !== existing.slug) {
-      if (await this.repo.existsBySlug(data.slug, id)) {
+      if (await this.readRepo.existsBySlug(data.slug, id)) {
         throw new IngredientSlugCollisionError(data.slug);
       }
     }
 
     // Check canonical name uniqueness if changed
     if (data.canonicalName && data.canonicalName !== existing.canonical_name) {
-      if (await this.repo.existsByCanonicalName(data.canonicalName, id)) {
+      if (await this.readRepo.existsByCanonicalName(data.canonicalName, id)) {
         throw new IngredientCanonicalNameCollisionError(data.canonicalName);
       }
     }
 
-    const row = await this.repo.update(id, data);
+    const row = await this.writeRepo.update(id, data);
     this.logger.log(`Updated ingredient ${id}`);
     return IngredientMapper.rowToIngredient(row);
   }
 
   async softDelete(id: Uuid) {
-    const existing = await this.repo.findById(id);
+    const existing = await this.readRepo.findById(id);
     if (!existing) throw new IngredientNotFoundError(id);
-    await this.repo.softDelete(id);
+    await this.writeRepo.softDelete(id);
     this.logger.log(`Soft-deleted ingredient ${id}`);
   }
 
   async restore(id: Uuid) {
-    const existing = await this.repo.findById(id, { includeSoftDeleted: true });
+    const existing = await this.readRepo.findById(id, { includeSoftDeleted: true });
     if (!existing) throw new IngredientNotFoundError(id);
     if (!existing.deleted_at) {
       throw new IngredientInvalidLifecycleTransitionError('active', 'restore');
     }
-    await this.repo.restore(id);
+    await this.writeRepo.restore(id);
     this.logger.log(`Restored ingredient ${id}`);
     return this.findById(id);
   }
 
   async activate(id: Uuid) {
-    const existing = await this.repo.findById(id);
+    const existing = await this.readRepo.findById(id);
     if (!existing) throw new IngredientNotFoundError(id);
     if (existing.is_active) return IngredientMapper.rowToIngredient(existing);
-    const row = await this.repo.update(id, { isActive: true });
+    const row = await this.writeRepo.update(id, { isActive: true });
     this.logger.log(`Activated ingredient ${id}`);
     return IngredientMapper.rowToIngredient(row);
   }
 
   async deactivate(id: Uuid) {
-    const existing = await this.repo.findById(id);
+    const existing = await this.readRepo.findById(id);
     if (!existing) throw new IngredientNotFoundError(id);
     if (!existing.is_active) return IngredientMapper.rowToIngredient(existing);
-    const row = await this.repo.update(id, { isActive: false });
+    const row = await this.writeRepo.update(id, { isActive: false });
     this.logger.log(`Deactivated ingredient ${id}`);
     return IngredientMapper.rowToIngredient(row);
   }
@@ -221,19 +224,19 @@ export class IngredientsService {
   }) {
     const slug = data.slug ?? this.slugify(data.name);
 
-    if (await this.repo.existsByCategorySlug(slug)) {
+    if (await this.readRepo.existsByCategorySlug(slug)) {
       throw new IngredientCategorySlugCollisionError(slug);
     }
 
     // Check parent depth
     if (data.parentId) {
-      const depth = await this.repo.getCategoryDepth(data.parentId);
+      const depth = await this.readRepo.getCategoryDepth(data.parentId);
       if (depth >= INGREDIENT_BOUNDS.categoryMaxDepth) {
         throw new IngredientCategoryMaxDepthError();
       }
     }
 
-    const row = await this.repo.createCategory({ ...data, slug });
+    const row = await this.writeRepo.createCategory({ ...data, slug });
     this.logger.log(`Created ingredient category ${row.id} (${row.name})`);
     return IngredientMapper.rowToCategory(row);
   }
@@ -249,35 +252,35 @@ export class IngredientsService {
       isActive?: boolean;
     },
   ) {
-    const existing = await this.repo.findCategoryById(id);
+    const existing = await this.readRepo.findCategoryById(id);
     if (!existing) throw new IngredientCategoryNotFoundError(id);
 
     if (data.slug && data.slug !== existing.slug) {
-      if (await this.repo.existsByCategorySlug(data.slug, id)) {
+      if (await this.readRepo.existsByCategorySlug(data.slug, id)) {
         throw new IngredientCategorySlugCollisionError(data.slug);
       }
     }
 
-    const row = await this.repo.updateCategory(id, data);
+    const row = await this.writeRepo.updateCategory(id, data);
     this.logger.log(`Updated ingredient category ${id}`);
     return IngredientMapper.rowToCategory(row);
   }
 
   async softDeleteCategory(id: Uuid) {
-    const existing = await this.repo.findCategoryById(id);
+    const existing = await this.readRepo.findCategoryById(id);
     if (!existing) throw new IngredientCategoryNotFoundError(id);
 
-    const childCount = await this.repo.countCategoryChildren(id);
+    const childCount = await this.readRepo.countCategoryChildren(id);
     if (childCount > 0) {
       throw new IngredientCategoryHasChildrenError();
     }
 
-    const ingredientCount = await this.repo.countCategoryIngredients(id);
+    const ingredientCount = await this.readRepo.countCategoryIngredients(id);
     if (ingredientCount > 0) {
       throw new IngredientCategoryHasIngredientsError();
     }
 
-    await this.repo.softDeleteCategory(id);
+    await this.writeRepo.softDeleteCategory(id);
     this.logger.log(`Soft-deleted ingredient category ${id}`);
   }
 
@@ -295,7 +298,7 @@ export class IngredientsService {
     },
   ) {
     await this.findById(ingredientId); // verify exists
-    const row = await this.repo.createScore({ ...data, ingredientId });
+    const row = await this.writeRepo.createScore({ ...data, ingredientId });
     this.logger.log(`Created score for ingredient ${ingredientId}`);
     return row;
   }

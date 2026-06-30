@@ -1,2 +1,7 @@
-export * from './brands.repository';
-export * from './products.repository';
+export { BrandsRepository } from './brands.repository';
+export {
+  ProductsReadRepository,
+  ProductsWriteRepository,
+  ProductsSearchRepository,
+  ProductLookupRepository,
+} from './products.repository';

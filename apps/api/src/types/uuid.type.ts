@@ -16,5 +16,5 @@ export function asUuid(value: string): Uuid {
   if (!isUuid(value)) {
     throw new TypeError(`Invalid UUID: ${value}`);
   }
-  return value as Uuid;
+  return value;
 }
