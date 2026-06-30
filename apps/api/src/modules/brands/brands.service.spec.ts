@@ -3,6 +3,7 @@ import { BrandsService } from './brands.service';
 import { BrandsReadRepository, BrandsWriteRepository } from './brands.repository';
 import { BrandNotFoundError, BrandSlugCollisionError, BrandHasProductsError, BrandInvalidLifecycleTransitionError } from './domain/errors';
 import type { Uuid } from '@types';
+import { CacheService } from '@shared';
 
 const u = (id: string) => id as unknown as Uuid;
 const B1 = u('b1');
@@ -47,6 +48,7 @@ describe('BrandsService', () => {
         BrandsService,
         { provide: BrandsReadRepository, useValue: mockReadRepo },
         { provide: BrandsWriteRepository, useValue: mockWriteRepo },
+        { provide: CacheService, useValue: { get: jest.fn(), set: jest.fn(), delete: jest.fn(), deleteByPattern: jest.fn(), clear: jest.fn(), stats: jest.fn() } },
       ],
     }).compile();
     service = module.get<BrandsService>(BrandsService);

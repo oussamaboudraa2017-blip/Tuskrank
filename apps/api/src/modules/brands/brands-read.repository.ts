@@ -192,6 +192,14 @@ export class BrandsReadRepository extends BaseRepository {
     return result.rows;
   }
 
+  async findByIds(ids: readonly Uuid[]): Promise<BrandRow[]> {
+    if (ids.length === 0) return [];
+    const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ');
+    const sql = `${this.baseQuery()} WHERE b.id IN (${placeholders}) AND b.deleted_at IS NULL`;
+    const result = await this.query<BrandRow>(sql, [...ids]);
+    return result.rows;
+  }
+
   async exists(id: Uuid, options: { excludeId?: Uuid; includeSoftDeleted?: boolean } = {}): Promise<boolean> {
     const conditions = ['b.id = $1'];
     if (!options.includeSoftDeleted) {

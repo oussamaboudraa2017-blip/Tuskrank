@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '@database';
+import { CommonModule } from '@common';
 import { BrandsController } from './brands.controller';
 import { BrandsService } from './brands.service';
 import { BrandsReadRepository, BrandsWriteRepository } from './brands.repository';
@@ -21,7 +22,7 @@ import { BrandsReadRepository, BrandsWriteRepository } from './brands.repository
  *   POST   /api/v1/brands/:brandId/restore             (admin)
  */
 @Module({
-  imports: [DatabaseModule],
+  imports: [CommonModule, DatabaseModule],
   controllers: [BrandsController],
   providers: [BrandsReadRepository, BrandsWriteRepository, BrandsService],
   exports: [BrandsService],

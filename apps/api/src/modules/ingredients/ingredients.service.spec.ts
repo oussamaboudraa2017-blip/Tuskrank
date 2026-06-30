@@ -3,6 +3,7 @@ import { IngredientsService } from './ingredients.service';
 import { IngredientsReadRepository, IngredientsWriteRepository } from './ingredients.repository';
 import { IngredientNotFoundError, IngredientSlugCollisionError, IngredientCanonicalNameCollisionError, IngredientCategorySlugCollisionError, IngredientCategoryMaxDepthError, IngredientCategoryHasChildrenError, IngredientInvalidLifecycleTransitionError } from './domain/errors';
 import type { Uuid } from '@types';
+import { CacheService } from '@shared';
 
 const u = (id: string) => id as unknown as Uuid;
 const I1 = u('i1');
@@ -67,6 +68,7 @@ describe('IngredientsService', () => {
         IngredientsService,
         { provide: IngredientsReadRepository, useValue: mockReadRepo },
         { provide: IngredientsWriteRepository, useValue: mockWriteRepo },
+        { provide: CacheService, useValue: { get: jest.fn(), set: jest.fn(), delete: jest.fn(), deleteByPattern: jest.fn(), clear: jest.fn(), stats: jest.fn() } },
       ],
     }).compile();
     service = module.get<IngredientsService>(IngredientsService);

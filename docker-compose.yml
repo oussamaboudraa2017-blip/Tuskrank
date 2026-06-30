@@ -29,6 +29,55 @@ services:
     networks:
       - tuskrank-net
 
+  redis:
+    image: redis:7-alpine
+    container_name: tuskrank-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - tuskrank-net
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tuskrank-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      APP_PORT: 4000
+      APP_HOST: 0.0.0.0
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-tuskrank}
+      DATABASE_SSL: "false"
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      LOG_FORMAT: ${LOG_FORMAT:-pretty}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      SUPABASE_PROJECT_ID: ${SUPABASE_PROJECT_ID:-}
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_TTL_MS: 60000
+    ports:
+      - "${API_PORT:-4000}:4000"
+    networks:
+      - tuskrank-net
+
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: tuskrank-pgadmin
@@ -46,6 +95,8 @@ services:
 
 volumes:
   postgres_data:
+    driver: local
+  redis_data:
     driver: local
 
 networks:

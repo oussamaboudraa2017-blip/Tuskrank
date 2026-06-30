@@ -16,6 +16,7 @@ import {
 } from './domain/errors';
 import { INGREDIENT_BOUNDS } from './domain/constants';
 import type { Uuid } from '@types';
+import { CacheService } from '@shared';
 
 /**
  * Ingredients service — business orchestration.
@@ -29,6 +30,7 @@ export class IngredientsService {
   constructor(
     private readonly readRepo: IngredientsReadRepository,
     private readonly writeRepo: IngredientsWriteRepository,
+    private readonly cache: CacheService,
   ) {}
 
   /* ================================================================
@@ -36,15 +38,23 @@ export class IngredientsService {
    * ================================================================ */
 
   async findBySlug(slug: string) {
+    const cached = await this.cache.get(`ingredient:slug:${slug}`);
+    if (cached) return cached as ReturnType<typeof IngredientMapper.rowToIngredient>;
     const row = await this.readRepo.findBySlug(slug);
     if (!row) throw new IngredientNotFoundError(slug);
-    return IngredientMapper.rowToIngredient(row);
+    const domain = IngredientMapper.rowToIngredient(row);
+    await this.cache.set(`ingredient:slug:${slug}`, domain, 300_000);
+    return domain;
   }
 
   async findById(id: Uuid) {
+    const cached = await this.cache.get(`ingredient:${id}`);
+    if (cached) return cached as ReturnType<typeof IngredientMapper.rowToIngredient>;
     const row = await this.readRepo.findById(id);
     if (!row) throw new IngredientNotFoundError(id);
-    return IngredientMapper.rowToIngredient(row);
+    const domain = IngredientMapper.rowToIngredient(row);
+    await this.cache.set(`ingredient:${id}`, domain, 300_000);
+    return domain;
   }
 
   async list(query: IngredientQuery) {
@@ -79,9 +89,13 @@ export class IngredientsService {
   }
 
   async listCategories() {
+    const cached = await this.cache.get('ingredient:categories');
+    if (cached) return cached as ReturnType<typeof IngredientMapper.buildCategoryTree>;
     const rows = await this.readRepo.findCategories();
     const categories = rows.map((r) => IngredientMapper.rowToCategory(r));
-    return IngredientMapper.buildCategoryTree(categories);
+    const tree = IngredientMapper.buildCategoryTree(categories);
+    await this.cache.set('ingredient:categories', tree, 1_800_000);
+    return tree;
   }
 
   /* ================================================================
@@ -133,6 +147,7 @@ export class IngredientsService {
     }
 
     const row = await this.writeRepo.create({ ...data, slug });
+    await this.cache.deleteByPattern('ingredient:categories');
     this.logger.log(`Created ingredient ${row.id} (${row.name})`);
     return IngredientMapper.rowToIngredient(row);
   }
@@ -170,6 +185,11 @@ export class IngredientsService {
     }
 
     const row = await this.writeRepo.update(id, data);
+    await this.cache.delete(`ingredient:${id}`);
+    await this.cache.delete(`ingredient:slug:${existing.slug}`);
+    if (data.slug && data.slug !== existing.slug) {
+      await this.cache.delete(`ingredient:slug:${data.slug}`);
+    }
     this.logger.log(`Updated ingredient ${id}`);
     return IngredientMapper.rowToIngredient(row);
   }
@@ -178,6 +198,8 @@ export class IngredientsService {
     const existing = await this.readRepo.findById(id);
     if (!existing) throw new IngredientNotFoundError(id);
     await this.writeRepo.softDelete(id);
+    await this.cache.delete(`ingredient:${id}`);
+    await this.cache.delete(`ingredient:slug:${existing.slug}`);
     this.logger.log(`Soft-deleted ingredient ${id}`);
   }
 
@@ -188,6 +210,8 @@ export class IngredientsService {
       throw new IngredientInvalidLifecycleTransitionError('active', 'restore');
     }
     await this.writeRepo.restore(id);
+    await this.cache.delete(`ingredient:${id}`);
+    await this.cache.delete(`ingredient:slug:${existing.slug}`);
     this.logger.log(`Restored ingredient ${id}`);
     return this.findById(id);
   }
@@ -197,6 +221,7 @@ export class IngredientsService {
     if (!existing) throw new IngredientNotFoundError(id);
     if (existing.is_active) return IngredientMapper.rowToIngredient(existing);
     const row = await this.writeRepo.update(id, { isActive: true });
+    await this.cache.delete(`ingredient:${id}`);
     this.logger.log(`Activated ingredient ${id}`);
     return IngredientMapper.rowToIngredient(row);
   }
@@ -206,6 +231,7 @@ export class IngredientsService {
     if (!existing) throw new IngredientNotFoundError(id);
     if (!existing.is_active) return IngredientMapper.rowToIngredient(existing);
     const row = await this.writeRepo.update(id, { isActive: false });
+    await this.cache.delete(`ingredient:${id}`);
     this.logger.log(`Deactivated ingredient ${id}`);
     return IngredientMapper.rowToIngredient(row);
   }
@@ -237,6 +263,7 @@ export class IngredientsService {
     }
 
     const row = await this.writeRepo.createCategory({ ...data, slug });
+    await this.cache.deleteByPattern('ingredient:categories');
     this.logger.log(`Created ingredient category ${row.id} (${row.name})`);
     return IngredientMapper.rowToCategory(row);
   }
@@ -262,6 +289,7 @@ export class IngredientsService {
     }
 
     const row = await this.writeRepo.updateCategory(id, data);
+    await this.cache.deleteByPattern('ingredient:categories');
     this.logger.log(`Updated ingredient category ${id}`);
     return IngredientMapper.rowToCategory(row);
   }
@@ -281,6 +309,7 @@ export class IngredientsService {
     }
 
     await this.writeRepo.softDeleteCategory(id);
+    await this.cache.deleteByPattern('ingredient:categories');
     this.logger.log(`Soft-deleted ingredient category ${id}`);
   }
 
@@ -299,6 +328,7 @@ export class IngredientsService {
   ) {
     await this.findById(ingredientId); // verify exists
     const row = await this.writeRepo.createScore({ ...data, ingredientId });
+    await this.cache.delete(`ingredient:${ingredientId}`);
     this.logger.log(`Created score for ingredient ${ingredientId}`);
     return row;
   }
@@ -337,7 +367,7 @@ export class IngredientsService {
         order: (params.sortOrder as SortOrder) ?? INGREDIENT_BOUNDS.sortOrder,
       },
       pagination: {
-        page: params.page ?? INGREDIENT_BOUNDS.defaultLimit,
+        page: params.page ?? 1,
         limit: params.limit ?? INGREDIENT_BOUNDS.defaultLimit,
         total: 0,
       },

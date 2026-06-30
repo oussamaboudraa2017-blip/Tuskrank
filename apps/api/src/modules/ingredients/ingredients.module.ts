@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '@database';
+import { CommonModule } from '@common';
 import { IngredientsController } from './ingredients.controller';
 import { IngredientsService } from './ingredients.service';
 import { IngredientsReadRepository, IngredientsWriteRepository } from './ingredients.repository';
@@ -27,7 +28,7 @@ import { IngredientsReadRepository, IngredientsWriteRepository } from './ingredi
  *   GET    /api/v1/ingredients/:ingredientId/scores/history  (public)
  */
 @Module({
-  imports: [DatabaseModule],
+  imports: [CommonModule, DatabaseModule],
   controllers: [IngredientsController],
   providers: [IngredientsReadRepository, IngredientsWriteRepository, IngredientsService],
   exports: [IngredientsService],

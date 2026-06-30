@@ -6,22 +6,23 @@ import {
   Body,
   HttpCode,
   HttpStatus,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiConsumes, ApiBody } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ImportService } from './import.service';
 import { ImportEntityType, ImportFormat, DedupeStrategy } from './enums';
 import { Roles } from '@common/decorators';
 import { okResponse } from '@common/dto';
+import type { Express } from 'express';
 
 /**
  * Import controller — REST surface for data import.
  *
- * NOTE: This sprint creates the infrastructure only. File upload
- * via multipart/form-data will be wired when the frontend import
- * UI is built. For now, the pipeline accepts raw content in the body.
- *
  * Endpoints:
- *   POST   /api/v1/import              (admin — run import pipeline)
+ *   POST   /api/v1/import              (admin — run import pipeline via JSON body)
+ *   POST   /api/v1/import/upload       (admin — run import pipeline via file upload, max 10MB)
  *   GET    /api/v1/import/jobs         (admin — list all jobs)
  *   GET    /api/v1/import/jobs/:jobId  (admin — get job detail)
  *   GET    /api/v1/import/jobs/:jobId/report (admin — get report)
@@ -32,13 +33,13 @@ export class ImportController {
   constructor(private readonly service: ImportService) {}
 
   /* ================================================================
-   * Admin — Run import
+   * Admin — Run import via JSON body
    * ================================================================ */
 
   @Post()
   @Roles('admin')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Run an import pipeline (admin).' })
+  @ApiOperation({ summary: 'Run an import pipeline (admin, JSON body).' })
   @ApiConsumes('application/json')
   @ApiBody({
     schema: {
@@ -66,6 +67,49 @@ export class ImportController {
       content: body.content,
       filename: body.filename,
       dedupeStrategy: body.dedupeStrategy,
+    });
+    return okResponse(job);
+  }
+
+  /* ================================================================
+   * Admin — Run import via file upload (max 10 MB)
+   * ================================================================ */
+
+  @Post('upload')
+  @Roles('admin')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 10 * 1024 * 1024 },
+    }),
+  )
+  @ApiOperation({ summary: 'Run an import pipeline via file upload (admin, max 10MB).' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file', 'entityType'],
+      properties: {
+        file: { type: 'string', format: 'binary', description: 'CSV or JSON file (max 10MB)' },
+        entityType: { type: 'string', enum: ['products', 'brands', 'ingredients'] },
+        dedupeStrategy: { type: 'string', enum: ['skip', 'overwrite', 'merge'], default: 'skip' },
+      },
+    },
+  })
+  async upload(
+    @UploadedFile() file: Express.Multer.File,
+    @Body('entityType') entityType: ImportEntityType,
+    @Body('dedupeStrategy') dedupeStrategy?: DedupeStrategy,
+  ) {
+    const filename = file.originalname;
+    const content = file.buffer.toString('utf-8');
+    const format = (filename.endsWith('.json') ? 'json' : 'csv') as ImportFormat;
+    const job = await this.service.import({
+      entityType,
+      format,
+      content,
+      filename,
+      dedupeStrategy,
     });
     return okResponse(job);
   }

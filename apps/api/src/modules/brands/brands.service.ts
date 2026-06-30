@@ -11,6 +11,7 @@ import {
 } from './domain/errors';
 import { BRAND_BOUNDS } from './domain/constants';
 import type { Uuid } from '@types';
+import { CacheService } from '@shared';
 
 /**
  * Brands service — business orchestration.
@@ -24,6 +25,7 @@ export class BrandsService {
   constructor(
     private readonly readRepo: BrandsReadRepository,
     private readonly writeRepo: BrandsWriteRepository,
+    private readonly cache: CacheService,
   ) {}
 
   /* ================================================================
@@ -31,15 +33,23 @@ export class BrandsService {
    * ================================================================ */
 
   async findBySlug(slug: string) {
+    const cached = await this.cache.get<ReturnType<typeof this.toDomain>>(`brand:slug:${slug}`);
+    if (cached) return cached;
     const row = await this.readRepo.findBySlug(slug);
     if (!row) throw new BrandNotFoundError(slug);
-    return this.toDomain(row);
+    const domain = this.toDomain(row);
+    await this.cache.set(`brand:slug:${slug}`, domain, 300_000);
+    return domain;
   }
 
   async findById(id: Uuid) {
+    const cached = await this.cache.get<ReturnType<typeof this.toDomain>>(`brand:${id}`);
+    if (cached) return cached;
     const row = await this.readRepo.findById(id);
     if (!row) throw new BrandNotFoundError(id);
-    return this.toDomain(row);
+    const domain = this.toDomain(row);
+    await this.cache.set(`brand:${id}`, domain, 300_000);
+    return domain;
   }
 
   async list(query: BrandQuery) {
@@ -58,8 +68,12 @@ export class BrandsService {
   }
 
   async findFeatured(limit = 10) {
+    const cached = await this.cache.get<ReturnType<typeof this.toSummary>[]>(`brand:featured`);
+    if (cached) return cached;
     const rows = await this.readRepo.findFeatured(limit);
-    return rows.map((r) => this.toSummary(r));
+    const summaries = rows.map((r) => this.toSummary(r));
+    await this.cache.set(`brand:featured`, summaries, 600_000);
+    return summaries;
   }
 
   /* ================================================================
@@ -83,6 +97,7 @@ export class BrandsService {
     }
 
     const row = await this.writeRepo.create({ ...data, slug });
+    await this.cache.deleteByPattern('brand:featured');
     this.logger.log(`Created brand ${row.id} (${row.name})`);
     return this.toDomain(row);
   }
@@ -110,6 +125,12 @@ export class BrandsService {
     }
 
     const row = await this.writeRepo.update(id, data);
+    await this.cache.delete(`brand:${id}`);
+    await this.cache.delete(`brand:slug:${existing.slug}`);
+    if (data.slug && data.slug !== existing.slug) {
+      await this.cache.delete(`brand:slug:${data.slug}`);
+    }
+    await this.cache.deleteByPattern('brand:featured');
     this.logger.log(`Updated brand ${id}`);
     return this.toDomain(row);
   }
@@ -124,6 +145,9 @@ export class BrandsService {
     }
 
     await this.writeRepo.softDelete(id);
+    await this.cache.delete(`brand:${id}`);
+    await this.cache.delete(`brand:slug:${existing.slug}`);
+    await this.cache.deleteByPattern('brand:featured');
     this.logger.log(`Soft-deleted brand ${id}`);
   }
 
@@ -134,6 +158,9 @@ export class BrandsService {
       throw new BrandInvalidLifecycleTransitionError('active', 'restore');
     }
     await this.writeRepo.restore(id);
+    await this.cache.delete(`brand:${id}`);
+    await this.cache.delete(`brand:slug:${existing.slug}`);
+    await this.cache.deleteByPattern('brand:featured');
     this.logger.log(`Restored brand ${id}`);
     return this.findById(id);
   }
@@ -143,6 +170,8 @@ export class BrandsService {
     if (!existing) throw new BrandNotFoundError(id);
     if (existing.is_active) return this.toDomain(existing);
     const row = await this.writeRepo.update(id, { isActive: true });
+    await this.cache.delete(`brand:${id}`);
+    await this.cache.deleteByPattern('brand:featured');
     this.logger.log(`Activated brand ${id}`);
     return this.toDomain(row);
   }
@@ -152,6 +181,8 @@ export class BrandsService {
     if (!existing) throw new BrandNotFoundError(id);
     if (!existing.is_active) return this.toDomain(existing);
     const row = await this.writeRepo.update(id, { isActive: false });
+    await this.cache.delete(`brand:${id}`);
+    await this.cache.deleteByPattern('brand:featured');
     this.logger.log(`Deactivated brand ${id}`);
     return this.toDomain(row);
   }

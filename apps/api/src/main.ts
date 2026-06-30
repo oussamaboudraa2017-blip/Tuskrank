@@ -3,7 +3,6 @@ import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import {
   Logger as NestLogger,
-  ValidationPipe,
   VersioningType,
 } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
@@ -11,6 +10,7 @@ import { json, urlencoded } from 'express';
 import compression from 'compression';
 import helmet from 'helmet';
 import { Logger } from 'nestjs-pino';
+import { I18nValidationPipe } from 'nestjs-i18n';
 import { AppModule } from './app.module';
 import { mountSwagger } from '@common/swagger';
 
@@ -83,9 +83,9 @@ async function bootstrap(): Promise<void> {
   });
   app.setGlobalPrefix(globalPrefix);
 
-  /* Global validation pipe (class-validator). */
+  /* Global validation pipe (class-validator with i18n support). */
   app.useGlobalPipes(
-    new ValidationPipe({
+    new I18nValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,

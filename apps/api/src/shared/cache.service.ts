@@ -1,90 +1,114 @@
-import { Injectable } from '@nestjs/common';
-
-interface CacheEntry<T> {
-  data: T;
-  expiresAt: number;
-}
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
+import { InjectMetric } from '@willsoto/nestjs-prometheus';
+import { Counter } from 'prom-client';
 
 @Injectable()
 export class CacheService {
-  private readonly store = new Map<string, CacheEntry<unknown>>();
+  private readonly logger = new Logger(CacheService.name);
   private hits = 0;
   private misses = 0;
-  private static readonly DEFAULT_TTL_MS = 60_000;
-  private static readonly MAX_SIZE = 500;
-  private static readonly PRUNE_INTERVAL = 100;
+  private readonly fallback = new Map<string, { data: unknown; expiry: number }>();
 
-  private setCount = 0;
+  constructor(
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+    @Optional() @InjectMetric('cache_hits_total') private readonly hitCounter?: Counter<string>,
+    @Optional() @InjectMetric('cache_misses_total') private readonly missCounter?: Counter<string>,
+  ) {}
 
-  get<T>(key: string): T | undefined {
-    const entry = this.store.get(key);
-    if (!entry) {
-      this.misses++;
+  async get<T>(key: string): Promise<T | undefined> {
+    try {
+      const data = await this.cacheManager.get<T>(key);
+      if (data === undefined || data === null) {
+        const fb = this.fallback.get(key);
+        if (fb && fb.expiry > Date.now()) {
+          this.hits++;
+          this.hitCounter?.inc();
+          return fb.data as T;
+        }
+        this.misses++;
+        this.missCounter?.inc();
+        this.logger.debug(`Cache miss: ${key}`);
+        return undefined;
+      }
+      this.hits++;
+      this.hitCounter?.inc();
+      this.logger.debug(`Cache hit: ${key}`);
+      return data;
+    } catch (err) {
+      this.logger.warn({ msg: `Cache get error for ${key}`, err: (err as Error).message });
+      const fb = this.fallback.get(key);
+      if (fb && fb.expiry > Date.now()) {
+        return fb.data as T;
+      }
       return undefined;
     }
-    if (Date.now() > entry.expiresAt) {
-      this.store.delete(key);
-      this.misses++;
-      return undefined;
-    }
-    this.hits++;
-    return entry.data as T;
   }
 
-  set<T>(key: string, data: T, ttlMs = CacheService.DEFAULT_TTL_MS): void {
-    if (this.store.size >= CacheService.MAX_SIZE) {
-      this.evictOldest();
+  async set<T>(key: string, data: T, ttlMs?: number): Promise<void> {
+    try {
+      await this.cacheManager.set(key, data, ttlMs ?? 60_000);
+    } catch (err) {
+      this.logger.warn({ msg: `Cache set error for ${key}, using fallback`, err: (err as Error).message });
     }
-    this.store.set(key, { data, expiresAt: Date.now() + ttlMs });
-    if (++this.setCount % CacheService.PRUNE_INTERVAL === 0) {
-      this.prune();
-    }
+    this.fallback.set(key, { data, expiry: Date.now() + (ttlMs ?? 60_000) });
+    this.logger.debug(`Cache set: ${key}`);
   }
 
-  delete(key: string): void {
-    this.store.delete(key);
+  async delete(key: string): Promise<void> {
+    try {
+      await this.cacheManager.del(key);
+    } catch (err) {
+      this.logger.warn({ msg: `Cache delete error for ${key}`, err: (err as Error).message });
+    }
+    this.fallback.delete(key);
+    this.logger.debug(`Cache delete: ${key}`);
   }
 
-  deleteByPattern(pattern: string): void {
-    for (const key of this.store.keys()) {
+  async deleteByPattern(pattern: string): Promise<void> {
+    try {
+      const store: any = (this.cacheManager as any).store;
+      if (store && typeof store.keys === 'function') {
+        const keys: string[] = await store.keys();
+        const matching = keys.filter((k: string) => k.includes(pattern));
+        if (matching.length > 0) {
+          await Promise.all(matching.map((k: string) => this.cacheManager.del(k)));
+        }
+      }
+    } catch (err) {
+      this.logger.warn({ msg: `Cache deleteByPattern error for ${pattern}`, err: (err as Error).message });
+    }
+    for (const key of this.fallback.keys()) {
       if (key.includes(pattern)) {
-        this.store.delete(key);
+        this.fallback.delete(key);
       }
     }
+    this.logger.debug(`Cache deleteByPattern: ${pattern}`);
   }
 
-  clear(): void {
-    this.store.clear();
+  async clear(): Promise<void> {
+    try {
+      const store: any = (this.cacheManager as any).store;
+      if (store && typeof store.reset === 'function') {
+        await store.reset();
+      } else {
+        this.fallback.clear();
+      }
+    } catch (err) {
+      this.logger.warn({ msg: 'Cache clear error', err: (err as Error).message });
+    }
+    this.fallback.clear();
+    this.logger.debug('Cache cleared');
   }
 
   stats(): { size: number; hits: number; misses: number; hitRate: string } {
     const total = this.hits + this.misses;
     return {
-      size: this.store.size,
+      size: this.fallback.size,
       hits: this.hits,
       misses: this.misses,
       hitRate: total > 0 ? `${((this.hits / total) * 100).toFixed(1)}%` : '0%',
     };
-  }
-
-  private evictOldest(): void {
-    let oldestKey: string | null = null;
-    let oldestTime = Infinity;
-    for (const [key, entry] of this.store.entries()) {
-      if (entry.expiresAt < oldestTime) {
-        oldestTime = entry.expiresAt;
-        oldestKey = key;
-      }
-    }
-    if (oldestKey) this.store.delete(oldestKey);
-  }
-
-  private prune(): void {
-    const now = Date.now();
-    for (const [key, entry] of this.store.entries()) {
-      if (entry.expiresAt <= now) {
-        this.store.delete(key);
-      }
-    }
   }
 }

@@ -1,88 +1,63 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsBoolean,
-  IsNotEmpty,
-  IsNumber,
-  IsOptional,
-  IsString,
-  IsUUID,
-  Max,
-  MaxLength,
-  Min,
-} from 'class-validator';
+import { IsBoolean, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 
-/**
- * DTO for `POST /api/v1/products` (admin — create product).
- *
- * Validation uses `class-validator` for NestJS integration. Zod
- * schemas in `domain/validation/` are the domain-level equivalent;
- * the service may re-validate via Zod if stricter guarantees are
- * needed (e.g. slug format, UPC length).
- */
 export class CreateProductDto {
-  @ApiProperty({ description: 'Brand uuid.', example: '...' })
+  @ApiProperty({ description: 'Brand ID.' })
   @IsUUID()
-  @IsNotEmpty()
   brandId!: string;
 
-  @ApiProperty({ description: 'Product name.', example: 'Acme Adult Chicken' })
+  @ApiProperty({ description: 'Product name.', example: 'Chicken & Rice Recipe' })
   @IsString()
-  @IsNotEmpty()
-  @MaxLength(200)
+  @MinLength(1)
+  @MaxLength(300)
   name!: string;
 
-  @ApiProperty({ description: 'URL-safe slug (unique per brand).', example: 'acme-adult-chicken' })
+  @ApiProperty({ description: 'URL-safe slug, unique per brand.' })
   @IsString()
-  @IsNotEmpty()
-  @MaxLength(200)
+  @MinLength(1)
   slug!: string;
 
-  @ApiPropertyOptional({ description: 'Marketing description.', example: 'Made with named animal protein...' })
+  @ApiPropertyOptional({ description: 'Product description.' })
   @IsString()
   @IsOptional()
-  @MaxLength(8000)
-  description?: string | null;
+  description?: string;
 
-  @ApiPropertyOptional({ description: 'UPC / GTIN (8-14 digits).', example: '012345678901' })
+  @ApiPropertyOptional({ description: 'UPC / barcode.' })
   @IsString()
   @IsOptional()
-  upc?: string | null;
+  upc?: string;
 
-  @ApiPropertyOptional({ description: 'Manufacturer SKU.', example: 'ACM-001' })
+  @ApiPropertyOptional({ description: 'SKU.' })
   @IsString()
   @IsOptional()
-  @MaxLength(64)
-  sku?: string | null;
+  sku?: string;
 
-  @ApiPropertyOptional({ description: 'Package size in grams.', example: 5000 })
-  @IsNumber()
-  @Min(0.01)
-  @Max(1_000_000)
-  @IsOptional()
-  packageSizeGrams?: number | null;
-
-  @ApiPropertyOptional({ description: 'Human-readable package size label.', example: '5 lb' })
+  @ApiPropertyOptional({ description: 'Package size in grams.' })
   @IsString()
   @IsOptional()
-  @MaxLength(64)
-  packageSizeLabel?: string | null;
+  packageSizeGrams?: number;
 
-  @ApiPropertyOptional({ description: 'Food form uuid.' })
+  @ApiPropertyOptional({ description: 'Package size label.', example: '5 lb' })
+  @IsString()
+  @IsOptional()
+  packageSizeLabel?: string;
+
+  @ApiPropertyOptional({ description: 'Food form ID.' })
   @IsUUID()
   @IsOptional()
-  foodFormId?: string | null;
+  foodFormId?: string;
 
-  @ApiPropertyOptional({ description: 'Primary protein source uuid.' })
+  @ApiPropertyOptional({ description: 'Primary protein source ID.' })
   @IsUUID()
   @IsOptional()
-  primaryProteinSourceId?: string | null;
+  primaryProteinSourceId?: string;
 
-  @ApiPropertyOptional({ description: 'Whether the product is publicly listed.', default: true })
+  @ApiPropertyOptional({ description: 'Is active.', default: true })
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
 
-  @ApiPropertyOptional({ description: 'Publish immediately.', default: false })
+  @ApiPropertyOptional({ description: 'Publish immediately after creation.', default: false })
   @IsBoolean()
   @IsOptional()
   publishImmediately?: boolean;

@@ -1,18 +1,4 @@
-export {
-  ListIngredientsQueryDto,
-  SearchIngredientsQueryDto,
-  CreateIngredientDto,
-  UpdateIngredientDto,
-  CreateCategoryDto,
-  UpdateCategoryDto,
-  CreateScoreDto,
-} from './ingredient.dto';
-
-export {
-  IngredientDetailDto,
-  IngredientListItemDto,
-  IngredientCategoryDto,
-  IngredientScoreDto,
-  ProductIngredientEntryDto,
-  IngredientReferenceDto,
-} from './ingredient-detail.dto';
+export { CreateIngredientDto } from './create-ingredient.dto';
+export { UpdateIngredientDto } from './update-ingredient.dto';
+export { IngredientListQueryDto } from './ingredient-list-query.dto';
+export { IngredientResponseDto } from './ingredient-response.dto';

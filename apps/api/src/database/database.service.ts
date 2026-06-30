@@ -4,6 +4,7 @@ import {
   Logger,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
@@ -15,7 +16,8 @@ import {
   UnprocessableEntityError,
   ValidationError,
 } from '@common/errors/api-error';
-import { PinoLogger } from 'nestjs-pino';
+import { InjectMetric } from '@willsoto/nestjs-prometheus';
+import { Counter } from 'prom-client';
 
 export const PG_POOL = Symbol.for('tuskrank.pg_pool');
 
@@ -61,6 +63,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     @Inject(ConfigService) private readonly config: ConfigService,
+    @Optional() @InjectMetric('db_queries_total') private readonly dbQueryCounter?: Counter<string>,
   ) {
     this.poolConfig = {
       min: this.config.get<number>('DATABASE_POOL_MIN', 2),
@@ -139,7 +142,18 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     text: string,
     values: ReadonlyArray<unknown> = [],
   ): Promise<QueryResult<R>> {
+    this.dbQueryCounter?.inc({ operation: this.inferOperation(text) });
     return this.executeWithRetry<R>((pool) => pool.query<R>(text, values as unknown[]));
+  }
+
+  private inferOperation(text: string): string {
+    const trimmed = text.trim().toUpperCase();
+    if (trimmed.startsWith('SELECT')) return 'SELECT';
+    if (trimmed.startsWith('INSERT')) return 'INSERT';
+    if (trimmed.startsWith('UPDATE')) return 'UPDATE';
+    if (trimmed.startsWith('DELETE')) return 'DELETE';
+    if (trimmed.startsWith('WITH')) return 'WITH';
+    return 'OTHER';
   }
 
   async transaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {

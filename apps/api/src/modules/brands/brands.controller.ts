@@ -1,57 +1,23 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Patch,
-  Param,
-  Body,
-  Query,
-  HttpCode,
-  HttpStatus,
-} from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
-import type { Uuid } from '@types';
+import { Controller, Get, Post, Put, Delete, Param, Query, Body, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { BrandsService } from './brands.service';
-import {
-  ListBrandsQueryDto,
-  SearchBrandsQueryDto,
-  CreateBrandDto,
-  UpdateBrandDto,
-  PatchBrandDto,
-} from './dto';
-import { Public, Roles } from '@common/decorators';
+import { CreateBrandDto, UpdateBrandDto, BrandResponseDto, BrandListQueryDto } from './dto';
+import { AdminGuard } from '@common/guards';
+import { Throttle } from '@nestjs/throttler';
+import { Public } from '@common/decorators';
 import { okResponse, paginatedResponse, buildPaginationMeta } from '@common/dto';
+import type { Uuid } from '@types';
 
-/**
- * Brands controller — REST surface for Sprint 2D.
- *
- * Endpoints:
- *   GET    /api/v1/brands                              (public — paginated list)
- *   GET    /api/v1/brands/featured                     (public — top brands)
- *   GET    /api/v1/brands/search?q=...                 (public — search)
- *   GET    /api/v1/brands/:slug                        (public — detail)
- *   POST   /api/v1/brands                              (admin — create)
- *   PUT    /api/v1/brands/:brandId                     (admin — full update)
- *   PATCH  /api/v1/brands/:brandId                     (admin — partial update)
- *   POST   /api/v1/brands/:brandId/activate            (admin)
- *   POST   /api/v1/brands/:brandId/deactivate          (admin)
- *   POST   /api/v1/brands/:brandId/soft-delete         (admin)
- *   POST   /api/v1/brands/:brandId/restore             (admin)
- */
 @ApiTags('brands')
 @Controller({ path: 'brands', version: '1' })
 export class BrandsController {
   constructor(private readonly service: BrandsService) {}
 
-  /* ================================================================
-   * Public — List
-   * ================================================================ */
-
   @Get()
   @Public()
-  @ApiOperation({ summary: 'List brands (paginated, filterable, sortable).' })
-  async list(@Query() query: ListBrandsQueryDto) {
+  @ApiOperation({ summary: 'List brands with pagination and filters.' })
+  @ApiResponse({ status: 200, description: 'Paginated list of brands.' })
+  async list(@Query() query: BrandListQueryDto) {
     const brandQuery = this.service.buildQueryFromDto({
       page: query.page,
       limit: query.limit,
@@ -61,69 +27,44 @@ export class BrandsController {
       sortBy: query.sortBy,
       sortOrder: query.sortOrder,
     });
-
     const { items, total } = await this.service.list(brandQuery);
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
-
     const meta = buildPaginationMeta(page, limit, total, brandQuery.sort.by, brandQuery.sort.order);
-    return paginatedResponse({ data: items, meta });
+    return paginatedResponse({ data: items.map((i) => BrandResponseDto.fromDomain(i as any)), meta });
   }
-
-  /* ================================================================
-   * Public — Featured
-   * ================================================================ */
 
   @Get('featured')
   @Public()
-  @ApiOperation({ summary: 'Get top brands ranked by product count and score.' })
+  @ApiOperation({ summary: 'Get featured brands.' })
   async featured(@Query('limit') limit?: number) {
-    const brands = await this.service.findFeatured(limit ?? 10);
-    return okResponse(brands);
+    const items = await this.service.findFeatured(limit ?? 10);
+    return okResponse(items.map((i) => BrandResponseDto.fromDomain(i as any)));
   }
-
-  /* ================================================================
-   * Public — Search
-   * ================================================================ */
 
   @Get('search')
   @Public()
   @ApiOperation({ summary: 'Search brands by name or manufacturer.' })
-  async search(@Query() query: SearchBrandsQueryDto) {
-    const { items, total } = await this.service.search({
-      q: query.q,
-      countryCode: query.countryCode,
-      page: query.page,
-      limit: query.limit,
-    });
-
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
-
-    const meta = buildPaginationMeta(page, limit, total);
-    return paginatedResponse({ data: items, meta });
+  async search(@Query('q') q: string, @Query('page') page?: number, @Query('limit') limit?: number) {
+    const { items, total } = await this.service.search({ q, page, limit });
+    const meta = buildPaginationMeta(page ?? 1, limit ?? 20, total);
+    return paginatedResponse({ data: items.map((i) => BrandResponseDto.fromDomain(i as any)), meta });
   }
-
-  /* ================================================================
-   * Public — Detail by slug
-   * ================================================================ */
 
   @Get(':slug')
   @Public()
-  @ApiOperation({ summary: 'Get brand detail by slug.' })
+  @ApiOperation({ summary: 'Get brand by slug.' })
   async findBySlug(@Param('slug') slug: string) {
     const brand = await this.service.findBySlug(slug);
-    return okResponse(brand);
+    return okResponse(BrandResponseDto.fromDomain(brand as any));
   }
 
-  /* ================================================================
-   * Admin — Create
-   * ================================================================ */
-
   @Post()
-  @Roles('admin')
-  @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Create a new brand (admin).' })
+  @UseGuards(AdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Create a new brand (admin only).' })
+  @ApiResponse({ status: 201, description: 'Brand created.' })
   async create(@Body() dto: CreateBrandDto) {
     const brand = await this.service.create({
       name: dto.name,
@@ -135,21 +76,16 @@ export class BrandsController {
       logoImageUrl: dto.logoImageUrl,
       isActive: dto.isActive,
     });
-    return okResponse(brand);
+    return okResponse(BrandResponseDto.fromDomain(brand as any));
   }
 
-  /* ================================================================
-   * Admin — Full update (PUT)
-   * ================================================================ */
-
-  @Put(':brandId')
-  @Roles('admin')
-  @ApiOperation({ summary: 'Full update of a brand (admin).' })
-  async update(
-    @Param('brandId') brandId: string,
-    @Body() dto: UpdateBrandDto,
-  ) {
-    const brand = await this.service.update(brandId as Uuid, {
+  @Put(':id')
+  @UseGuards(AdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Update a brand (admin only).' })
+  async update(@Param('id') id: string, @Body() dto: UpdateBrandDto) {
+    const brand = await this.service.update(id as unknown as Uuid, {
       name: dto.name,
       slug: dto.slug,
       manufacturer: dto.manufacturer,
@@ -159,70 +95,44 @@ export class BrandsController {
       logoImageUrl: dto.logoImageUrl,
       isActive: dto.isActive,
     });
-    return okResponse(brand);
+    return okResponse(BrandResponseDto.fromDomain(brand as any));
   }
 
-  /* ================================================================
-   * Admin — Partial update (PATCH)
-   * ================================================================ */
-
-  @Patch(':brandId')
-  @Roles('admin')
-  @ApiOperation({ summary: 'Partial update of a brand (admin).' })
-  async patch(
-    @Param('brandId') brandId: string,
-    @Body() dto: PatchBrandDto,
-  ) {
-    const brand = await this.service.update(brandId as Uuid, {
-      name: dto.name,
-      slug: dto.slug,
-      manufacturer: dto.manufacturer,
-      countryCode: dto.countryCode,
-      websiteUrl: dto.websiteUrl,
-      description: dto.description,
-      logoImageUrl: dto.logoImageUrl,
-      isActive: dto.isActive,
-    });
-    return okResponse(brand);
-  }
-
-  /* ================================================================
-   * Admin — Lifecycle transitions
-   * ================================================================ */
-
-  @Post(':brandId/activate')
-  @Roles('admin')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Activate a brand (admin).' })
-  async activate(@Param('brandId') brandId: string) {
-    const brand = await this.service.activate(brandId as Uuid);
-    return okResponse(brand);
-  }
-
-  @Post(':brandId/deactivate')
-  @Roles('admin')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Deactivate a brand (admin).' })
-  async deactivate(@Param('brandId') brandId: string) {
-    const brand = await this.service.deactivate(brandId as Uuid);
-    return okResponse(brand);
-  }
-
-  @Post(':brandId/soft-delete')
-  @Roles('admin')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Soft-delete a brand (admin).' })
-  async softDelete(@Param('brandId') brandId: string) {
-    await this.service.softDelete(brandId as Uuid);
+  @Delete(':id')
+  @UseGuards(AdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Soft-delete a brand (admin only).' })
+  async softDelete(@Param('id') id: string) {
+    await this.service.softDelete(id as unknown as Uuid);
     return okResponse({ deleted: true });
   }
 
-  @Post(':brandId/restore')
-  @Roles('admin')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Restore a soft-deleted brand (admin).' })
-  async restore(@Param('brandId') brandId: string) {
-    const brand = await this.service.restore(brandId as Uuid);
-    return okResponse(brand);
+  @Post(':id/restore')
+  @UseGuards(AdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Restore a soft-deleted brand (admin only).' })
+  async restore(@Param('id') id: string) {
+    const brand = await this.service.restore(id as unknown as Uuid);
+    return okResponse(BrandResponseDto.fromDomain(brand as any));
+  }
+
+  @Post(':id/activate')
+  @UseGuards(AdminGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Activate a brand (admin only).' })
+  async activate(@Param('id') id: string) {
+    const brand = await this.service.activate(id as unknown as Uuid);
+    return okResponse(BrandResponseDto.fromDomain(brand as any));
+  }
+
+  @Post(':id/deactivate')
+  @UseGuards(AdminGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Deactivate a brand (admin only).' })
+  async deactivate(@Param('id') id: string) {
+    const brand = await this.service.deactivate(id as unknown as Uuid);
+    return okResponse(BrandResponseDto.fromDomain(brand as any));
   }
 }

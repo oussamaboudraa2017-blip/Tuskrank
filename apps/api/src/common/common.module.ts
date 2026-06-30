@@ -1,6 +1,6 @@
 import { Global, MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import { RequestLoggingInterceptor } from './logger/request-logging.interceptor';
 import { GlobalExceptionFilter } from './filters/global-exception.filter';
@@ -9,8 +9,13 @@ import { TimeoutInterceptor } from './interceptors/timeout.interceptor';
 import { RequestIdMiddleware } from './middleware/request-id.middleware';
 import { SupabaseAuthGuard } from './guards/supabase-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
+import { ThrottlerByRoleGuard } from './guards/throttler-by-role.guard';
 import { LoggerCoreModule } from './logger/logger.module';
 import { APP_CONSTANTS } from './constants/app.constants';
+import { CacheService } from '@shared';
+import { BrandLoader, IngredientLoader } from './loaders';
+import { MetricsInterceptor } from './interceptors/metrics.interceptor';
+import { AuditLogInterceptor } from './interceptors/audit-log.interceptor';
 
 /**
  * Common cross-cutting module.
@@ -51,6 +56,9 @@ import { APP_CONSTANTS } from './constants/app.constants';
     TimeoutInterceptor,
     EnvelopeInterceptor,
     GlobalExceptionFilter,
+    CacheService,
+    BrandLoader,
+    IngredientLoader,
     {
       provide: APP_FILTER,
       useExisting: GlobalExceptionFilter,
@@ -61,7 +69,7 @@ import { APP_CONSTANTS } from './constants/app.constants';
     },
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: ThrottlerByRoleGuard,
     },
     {
       provide: APP_INTERCEPTOR,
@@ -70,6 +78,14 @@ import { APP_CONSTANTS } from './constants/app.constants';
     {
       provide: APP_INTERCEPTOR,
       useExisting: TimeoutInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useExisting: MetricsInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useExisting: AuditLogInterceptor,
     },
     {
       provide: APP_INTERCEPTOR,
@@ -84,9 +100,14 @@ import { APP_CONSTANTS } from './constants/app.constants';
     LoggerCoreModule,
     SupabaseAuthGuard,
     RolesGuard,
+    CacheService,
+    BrandLoader,
+    IngredientLoader,
+    MetricsInterceptor,
+    AuditLogInterceptor,
     RequestLoggingInterceptor,
-    EnvelopeInterceptor,
     TimeoutInterceptor,
+    EnvelopeInterceptor,
     GlobalExceptionFilter,
   ],
 })

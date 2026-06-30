@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { resolveEnvFile, validateAppConfig } from './app.config';
+import { resolveEnvFile } from './app.config';
+import { validateEnv } from './env.validation';
 
 /**
  * Global config module. Validation runs once at bootstrap.
@@ -11,7 +12,7 @@ import { resolveEnvFile, validateAppConfig } from './app.config';
       isGlobal: true,
       cache: true,
       envFilePath: resolveEnvFile(),
-      validate: (rawEnv) => validateAppConfig(rawEnv),
+      validate: (rawEnv) => validateEnv(rawEnv) as Record<string, unknown>,
       expandVariables: true,
     }),
   ],

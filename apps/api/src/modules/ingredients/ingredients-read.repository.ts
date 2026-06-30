@@ -282,6 +282,14 @@ export class IngredientsReadRepository extends BaseRepository {
     return result.rows;
   }
 
+  async findByIds(ids: readonly Uuid[]): Promise<IngredientRow[]> {
+    if (ids.length === 0) return [];
+    const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ');
+    const sql = `${this.baseQuery()} WHERE i.id IN (${placeholders}) AND i.deleted_at IS NULL`;
+    const result = await this.query<IngredientRow>(sql, [...ids]);
+    return result.rows;
+  }
+
   async exists(id: Uuid, options: { excludeId?: Uuid; includeSoftDeleted?: boolean } = {}): Promise<boolean> {
     const conditions = ['i.id = $1'];
     if (!options.includeSoftDeleted) {

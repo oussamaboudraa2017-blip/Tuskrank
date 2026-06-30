@@ -6,6 +6,7 @@ import { ProductEntity } from './domain/product.entity';
 import { ProductNotFoundError, ProductSlugCollisionError, ProductUpcCollisionError, BrandNotFoundError } from './domain/errors';
 import { ProductSortField, SortOrder } from './domain/enums';
 import type { Uuid } from '@types';
+import { CacheService } from '@shared';
 
 const u = (id: string) => id as unknown as Uuid;
 const P1 = u('p1');
@@ -71,6 +72,7 @@ describe('ProductsService', () => {
         { provide: ProductsSearchRepository, useValue: mockSearchRepo },
         { provide: ProductLookupRepository, useValue: mockLookupRepo },
         { provide: BrandsRepository, useValue: mockBrandsRepo },
+        { provide: CacheService, useValue: { get: jest.fn(), set: jest.fn(), delete: jest.fn(), deleteByPattern: jest.fn(), clear: jest.fn(), stats: jest.fn() } },
       ],
     }).compile();
     service = module.get<ProductsService>(ProductsService);

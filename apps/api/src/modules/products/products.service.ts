@@ -34,6 +34,7 @@ import {
   ProteinOrigin,
 } from './domain/enums';
 import type { ProductRow } from './domain/mapping/product.db-model';
+import { CacheService } from '@shared';
 
 @Injectable()
 export class ProductsService {
@@ -45,6 +46,7 @@ export class ProductsService {
     private readonly searchRepo: ProductsSearchRepository,
     private readonly lookupRepo: ProductLookupRepository,
     private readonly brands: BrandsRepository,
+    private readonly cache: CacheService,
   ) {}
 
   /* ================================================================
@@ -52,10 +54,14 @@ export class ProductsService {
    * ================================================================ */
 
   async findBySlug(slug: string): Promise<ProductEntity> {
+    const cached = await this.cache.get<ProductEntity>(`product:slug:${slug}`);
+    if (cached) return cached;
     const row = await this.readRepo.findBySlug(slug);
     if (!row) throw new ProductNotFoundError(slug);
     const hydrated = await this.readRepo.hydrateSingle(row);
-    return ProductMapper.dbToDomain(hydrated);
+    const domain = ProductMapper.dbToDomain(hydrated);
+    await this.cache.set(`product:slug:${slug}`, domain, 300_000);
+    return domain;
   }
 
   async list(query: ProductQuery): Promise<{ items: ProductEntity[]; total: number; nextCursor?: string | null }> {
@@ -80,9 +86,13 @@ export class ProductsService {
     pagination: { page: number; limit: number },
     options?: { petType?: string },
   ): Promise<ProductEntity[]> {
+    const cached = await this.cache.get<ProductEntity[]>('product:featured');
+    if (cached) return cached;
     const rows = await this.readRepo.findFeatured(pagination, options);
     const hydrated = await this.readRepo.batchHydrate(rows);
-    return hydrated.map((r) => ProductMapper.dbToDomain(r));
+    const domains = hydrated.map((r) => ProductMapper.dbToDomain(r));
+    await this.cache.set('product:featured', domains, 600_000);
+    return domains;
   }
 
   async search(input: ProductSearchInput): Promise<ProductEntity[]> {
@@ -144,6 +154,7 @@ export class ProductsService {
     }
 
     this.logger.log(`Created product ${row.id} (${row.slug})`);
+    await this.cache.deleteByPattern('product:featured');
 
     const hydrated = await this.readRepo.hydrateSingle(row);
     return ProductMapper.dbToDomain(hydrated);
@@ -178,6 +189,9 @@ export class ProductsService {
 
     await this.writeRepo.update(productId, patch);
 
+    await this.cache.delete(`product:slug:${existing.slug}`);
+    await this.cache.deleteByPattern('product:featured');
+
     const updated = await this.readRepo.findById(productId);
     if (!updated) throw new ProductNotFoundError(productId);
     const hydrated = await this.readRepo.hydrateSingle(updated);
@@ -189,6 +203,8 @@ export class ProductsService {
     if (!existing) throw new ProductNotFoundError(productId);
 
     await this.writeRepo.publish(productId, publishAt);
+    await this.cache.delete(`product:slug:${existing.slug}`);
+    await this.cache.deleteByPattern('product:featured');
     this.logger.log(`Published product ${productId}`);
 
     const updated = await this.readRepo.findById(productId);
@@ -202,6 +218,8 @@ export class ProductsService {
     if (!existing) throw new ProductNotFoundError(productId);
 
     await this.writeRepo.unpublish(productId);
+    await this.cache.delete(`product:slug:${existing.slug}`);
+    await this.cache.deleteByPattern('product:featured');
     this.logger.log(`Unpublished product ${productId}`);
 
     const updated = await this.readRepo.findById(productId);
@@ -215,6 +233,8 @@ export class ProductsService {
     if (!existing) throw new ProductNotFoundError(productId);
 
     await this.writeRepo.softDelete(productId);
+    await this.cache.delete(`product:slug:${existing.slug}`);
+    await this.cache.deleteByPattern('product:featured');
     this.logger.log(`Soft-deleted product ${productId}`);
   }
 
@@ -223,6 +243,8 @@ export class ProductsService {
     if (!existing) throw new ProductNotFoundError(productId);
 
     await this.writeRepo.restore(productId);
+    await this.cache.delete(`product:slug:${existing.slug}`);
+    await this.cache.deleteByPattern('product:featured');
     this.logger.log(`Restored product ${productId}`);
 
     const updated = await this.readRepo.findById(productId);
@@ -234,6 +256,7 @@ export class ProductsService {
   buildQueryFromDto(params: {
     page?: number;
     limit?: number;
+    cursor?: string;
     q?: string;
     brandId?: string;
     petType?: string;
@@ -272,6 +295,6 @@ export class ProductsService {
 
     const pagination: ProductPagination = { page, limit, total: 0 };
 
-    return { filters, sort, pagination };
+    return { filters, sort, pagination, cursor: params.cursor };
   }
 }
