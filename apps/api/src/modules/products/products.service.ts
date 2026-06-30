@@ -58,7 +58,16 @@ export class ProductsService {
     return ProductMapper.dbToDomain(hydrated);
   }
 
-  async list(query: ProductQuery): Promise<{ items: ProductEntity[]; total: number }> {
+  async list(query: ProductQuery): Promise<{ items: ProductEntity[]; total: number; nextCursor?: string | null }> {
+    if (query.cursor) {
+      const { rows, nextCursor, total } = await this.readRepo.findManyCursor(query);
+      const hydrated = await this.readRepo.batchHydrate(rows);
+      return {
+        items: hydrated.map((r) => ProductMapper.dbToDomain(r)),
+        total,
+        nextCursor,
+      };
+    }
     const { rows, total } = await this.readRepo.findMany(query);
     const hydrated = await this.readRepo.batchHydrate(rows);
     return {

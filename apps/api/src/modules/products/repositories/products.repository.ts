@@ -122,6 +122,72 @@ export class ProductsReadRepository extends BaseRepository<BaseEntity> {
     };
   }
 
+  /** Cursor-based pagination — O(1) at scale, no OFFSET drift. */
+  async findManyCursor(
+    query: ProductQuery,
+  ): Promise<{ rows: ProductRow[]; nextCursor: string | null; total: number }> {
+    const { filters, sort, pagination } = query;
+    const { conditions, values } = this.buildFilterConditions(filters);
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const sortCol = SORT_FIELD_MAP[sort.by] ?? 'p.created_at';
+    const sortDir = sort.order === SortOrder.Asc ? 'ASC' : 'DESC';
+    const sortOp = sortDir === 'ASC' ? '>' : '<';
+    const limit = Math.min(pagination.limit, 100);
+
+    const countSql = `SELECT COUNT(*)::int AS total ${PRODUCT_BASE_FROM} ${where}`;
+    let dataSql: string;
+    let dataValues: unknown[];
+
+    if (query.cursor) {
+      const decoded = this.decodeCursor(query.cursor);
+      if (decoded) {
+        const sortField = sortCol === 'p.created_at' ? 'p.created_at' : sortCol;
+        dataSql = `SELECT ${PRODUCT_BASE_COLS} ${PRODUCT_BASE_FROM} ${where} AND (${sortField}, p.id) ${sortOp} ($1::timestamptz, $2::uuid) ORDER BY ${sortField} ${sortDir}, p.id ${sortDir} LIMIT $3`;
+        dataValues = [new Date(decoded.sortValue).toISOString(), decoded.id, limit];
+      } else {
+        dataSql = `SELECT ${PRODUCT_BASE_COLS} ${PRODUCT_BASE_FROM} ${where} ORDER BY ${sortCol} ${sortDir}, p.id ${sortDir} LIMIT $${values.length + 1}`;
+        dataValues = [...values, limit];
+      }
+    } else {
+      dataSql = `SELECT ${PRODUCT_BASE_COLS} ${PRODUCT_BASE_FROM} ${where} ORDER BY ${sortCol} ${sortDir}, p.id ${sortDir} LIMIT $${values.length + 1}`;
+      dataValues = [...values, limit];
+    }
+
+    const [countResult, dataResult] = await Promise.all([
+      this.execute<{ total: number }>(countSql, values),
+      this.execute<ProductRow>(dataSql, dataValues),
+    ]);
+
+    const rows = dataResult.rows;
+    const lastRow = rows[rows.length - 1];
+    const nextCursor = rows.length === limit
+      ? this.encodeCursor(lastRow.id, (lastRow as unknown as Record<string, unknown>)[sortCol === 'p.created_at' ? 'created_at' : sortCol])
+      : null;
+
+    return {
+      rows,
+      nextCursor,
+      total: countResult.rows[0]?.total ?? 0,
+    };
+  }
+
+  private decodeCursor(cursor: string): { id: Uuid; sortValue: string } | null {
+    try {
+      const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+      if (typeof decoded.id === 'string' && typeof decoded.sv === 'string') {
+        return { id: decoded.id as Uuid, sortValue: decoded.sv };
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private encodeCursor(id: Uuid, sortValue: unknown): string {
+    return Buffer.from(JSON.stringify({ id, sv: String(sortValue) })).toString('base64url');
+  }
+
   async findFeatured(
     pagination: { page: number; limit: number },
     options?: { petType?: string },

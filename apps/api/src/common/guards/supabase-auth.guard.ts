@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { PinoLogger } from 'nestjs-pino';
+import LRUCache from 'lru-cache';
 import { PUBLIC_KEY, type AuthenticatedUser } from '@common/decorators';
 import { UnauthorizedError } from '@common/errors/api-error';
 import { AppEnvironment, UserRole } from '@common/enums';
@@ -10,30 +11,16 @@ import type { Request } from 'express';
 
 const DEFAULT_TIMEOUT_MS = 4_000;
 
-/**
- * Bearer / cookie token → Supabase user.
- *
- * Verifies the JWT using the Supabase project's public `anon` key.
- * Cached per-(token signature) for a short TTL to avoid an external
- * round-trip on every request in steady state.
- *
- * Sprint 2A scaffolding only. The actual login / refresh endpoints
- * arrive in Sprint 2B (Auth module).
- */
 @Injectable()
 export class SupabaseAuthGuard implements CanActivate {
   private readonly client: SupabaseClient;
   private readonly bypassInDev: boolean;
   private readonly nodeEnv: string;
 
-  private readonly verifiedCache = new Map<
-    string,
-    { user: AuthenticatedUser; expiresAtMs: number }
-  >();
-  private static readonly CACHE_TTL_MS = 60_000;
-  private static readonly CACHE_PRUNE_EVERY = 256;
-
-  private verificationCalls = 0;
+  private readonly verifiedCache = new LRUCache<string, AuthenticatedUser>({
+    max: 500,
+    ttl: 60_000,
+  });
 
   constructor(
     private readonly reflector: Reflector,
@@ -52,8 +39,6 @@ export class SupabaseAuthGuard implements CanActivate {
         auth: { autoRefreshToken: false, persistSession: false },
       });
     } else {
-      // No credentials configured: use a stub URL but rely on
-      // bypassInDev or fail closed (never bypass outside development).
       this.client = createClient('http://localhost', 'noop', {
         auth: { autoRefreshToken: false, persistSession: false },
       });
@@ -81,22 +66,27 @@ export class SupabaseAuthGuard implements CanActivate {
       return this.handleUnauthenticated(req);
     }
 
-    const cached = this.verifiedCache.get(this.cacheKey(accessToken));
-    const now = Date.now();
-    if (cached && cached.expiresAtMs > now) {
-      req.user = cached.user;
-      return true;
+    let sub: string | undefined;
+    try {
+      const payload = this.decodePayload(accessToken);
+      sub = payload?.sub as string | undefined;
+    } catch {
+      // token is malformed, proceed to verification which will fail
+    }
+
+    if (sub) {
+      const cached = this.verifiedCache.get(sub);
+      if (cached) {
+        req.user = cached;
+        return true;
+      }
     }
 
     try {
       const user = await this.verifyToken(accessToken);
       req.user = user;
-      this.verifiedCache.set(this.cacheKey(accessToken), {
-        user,
-        expiresAtMs: now + SupabaseAuthGuard.CACHE_TTL_MS,
-      });
-      if (++this.verificationCalls % SupabaseAuthGuard.CACHE_PRUNE_EVERY === 0) {
-        this.pruneCache(now);
+      if (sub) {
+        this.verifiedCache.set(sub, user);
       }
       return true;
     } catch (err) {
@@ -106,6 +96,16 @@ export class SupabaseAuthGuard implements CanActivate {
       }
       if (err instanceof UnauthorizedError) throw err;
       throw new UnauthorizedError('Bearer token verification failed');
+    }
+  }
+
+  private decodePayload(token: string): Record<string, unknown> | null {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    try {
+      return JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    } catch {
+      return null;
     }
   }
 
@@ -167,20 +167,5 @@ export class SupabaseAuthGuard implements CanActivate {
       email: 'dev-bypass@tuskrank.local',
       raw: { bypass: true, nodeEnv: this.nodeEnv },
     };
-  }
-
-  private cacheKey(token: string): string {
-    // Tokens are JWTs; we cache by token string but cap memory by
-    // pruning the map periodically. A real implementation would key
-    // by `sub` (subject) once verified.
-    return token;
-  }
-
-  private pruneCache(nowMs: number): void {
-    for (const [key, entry] of this.verifiedCache.entries()) {
-      if (entry.expiresAtMs <= nowMs) {
-        this.verifiedCache.delete(key);
-      }
-    }
   }
 }
