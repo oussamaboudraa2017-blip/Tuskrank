@@ -33,14 +33,30 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const { status, payload } = this.normalize(exception, traceId);
 
     if (status >= 500) {
-      this.logger.error(
-        `[${payload.code}] ${payload.message} trace=${traceId}`,
-        exception instanceof Error ? exception.stack : undefined,
-      );
-    } else {
+  console.error('========== REAL ERROR ==========');
+
+  if (exception instanceof Error) {
+    console.error(exception);
+    console.error(exception.stack);
+  } else {
+    console.error(exception);
+  }
+
+  console.error('===============================');
+
+  this.logger.error(
+    `[${payload.code}] ${payload.message} trace=${traceId}`,
+    exception instanceof Error ? exception.stack : undefined,
+  );
+} else {
       this.logger.warn(
         `[${payload.code}] ${payload.message} trace=${traceId}`,
       );
+if (exception instanceof Error) {
+  console.error(exception.stack);
+} else {
+  console.error(exception);
+}
     }
 
     res.status(status).json({
