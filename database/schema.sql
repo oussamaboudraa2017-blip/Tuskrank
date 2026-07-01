@@ -936,12 +936,7 @@ CREATE TABLE audit_logs (
     action        text NOT NULL,                     -- create / update / delete / publish / ...
     before        jsonb,
     after         jsonb,
-    diff          jsonb GENERATED ALWAYS AS (
-        CASE
-            WHEN before IS NULL AND after IS NULL THEN NULL
-            ELSE jsonb_build_object('before', before, 'after', after)
-        END
-    ) STORED,
+    diff          jsonb,
     request_id    text,
     ip_address    inet,
     user_agent    text,
