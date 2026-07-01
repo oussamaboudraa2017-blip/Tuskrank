@@ -19,15 +19,9 @@ CREATE INDEX IF NOT EXISTS idx_brands_name_lower ON brands(lower(name)) WHERE de
 -- Products
 CREATE INDEX IF NOT EXISTS idx_products_slug ON products(slug) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_products_brand_id ON products(brand_id) WHERE deleted_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_products_pet_type_id ON products(pet_type_id) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_products_food_form_id ON products(food_form_id) WHERE deleted_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_products_life_stage_id ON products(life_stage_id) WHERE deleted_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_products_breed_size_id ON products(breed_size_id) WHERE deleted_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_products_protein_id ON products(primary_protein_id) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_products_active ON products(is_active) WHERE is_active = true AND deleted_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_products_price ON products(price_cents) WHERE price_cents IS NOT NULL AND deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_products_name_trgm ON products USING gin(name gin_trgm_ops) WHERE deleted_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_products_created ON products(created_at DESC) WHERE deleted_at IS NULL;
 
 -- Ingredients
 CREATE INDEX IF NOT EXISTS idx_ingredients_slug ON ingredients(slug) WHERE deleted_at IS NULL;
