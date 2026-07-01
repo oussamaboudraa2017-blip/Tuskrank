@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import type { ProductEntity } from '../entities/product.entity';
 
 export class ProductResponseDto {
   @ApiProperty() id!: string;
@@ -19,25 +20,25 @@ export class ProductResponseDto {
   @ApiPropertyOptional() overallScore?: number;
   @ApiPropertyOptional() grade?: string;
 
-  static fromDomain(domain: Record<string, unknown>): ProductResponseDto {
+  static fromDomain(domain: ProductEntity & { brandName?: string; overallScore?: number; grade?: string }): ProductResponseDto {
     const dto = new ProductResponseDto();
-    dto.id = domain.id as string;
-    dto.brandId = domain.brandId as string;
-    dto.brandName = domain.brandName as string;
-    dto.name = domain.name as string;
-    dto.slug = domain.slug as string;
-    dto.description = domain.description as string | undefined;
-    dto.upc = domain.upc as string | undefined;
-    dto.sku = domain.sku as string | undefined;
-    dto.packageSizeGrams = domain.packageSizeGrams as number | undefined;
-    dto.packageSizeLabel = domain.packageSizeLabel as string | undefined;
-    dto.isActive = domain.isActive as boolean;
-    dto.publishedAt = domain.publishedAt as Date | undefined;
-    dto.createdAt = domain.createdAt as Date;
-    dto.updatedAt = domain.updatedAt as Date;
-    dto.deletedAt = domain.deletedAt as Date | undefined;
-    dto.overallScore = domain.overallScore as number | undefined;
-    dto.grade = domain.grade as string | undefined;
+    dto.id = domain.id;
+    dto.brandId = domain.brandId;
+    dto.brandName = (domain as any).brandName ?? domain.brand?.name ?? '';
+    dto.name = domain.name;
+    dto.slug = domain.slug;
+    dto.description = domain.description ?? undefined;
+    dto.upc = domain.upc ?? undefined;
+    dto.sku = domain.sku ?? undefined;
+    dto.packageSizeGrams = domain.packageSizeGrams != null ? Number(domain.packageSizeGrams) : undefined;
+    dto.packageSizeLabel = domain.packageSizeLabel ?? undefined;
+    dto.isActive = domain.isActive;
+    dto.publishedAt = domain.publishedAt ?? undefined;
+    dto.createdAt = domain.createdAt;
+    dto.updatedAt = domain.updatedAt;
+    dto.deletedAt = domain.deletedAt ?? undefined;
+    dto.overallScore = (domain as any).overallScore;
+    dto.grade = (domain as any).grade;
     return dto;
   }
 }
