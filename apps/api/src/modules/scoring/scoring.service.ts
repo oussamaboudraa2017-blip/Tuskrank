@@ -5,6 +5,7 @@ import { ScoringEngine } from './engine/scoring.engine';
 import { ScoringConfig, ScoringResult, CategoryScore, ScoringWarning } from './types';
 import { ScoringCategory } from './enums';
 import { SCORING_BOUNDS } from './constants';
+import type { ProductScoringInput } from './types';
 
 /**
  * Scoring Service — orchestrates the scoring engine.
@@ -54,7 +55,14 @@ export class ScoringService {
     scoringVersion: string;
     createdAt: string;
   } | null> {
-    return this.repository.getCurrentScore(productId);
+    const row = await this.repository.getCurrentScore(productId);
+    if (!row) return null;
+    return {
+      ...row,
+      processingLevelScore: null,
+      scientificEvidenceScore: null,
+      labelAccuracyScore: null,
+    };
   }
 
   async bulkScore(
@@ -131,33 +139,31 @@ export class ScoringService {
     const safetyScore = this.getCategoryScore(result, ScoringCategory.ControversialIngredients);
     const nutritionScore = this.getCategoryScore(result, ScoringCategory.NutritionalBalance);
     const transparencyScore = this.getCategoryScore(result, ScoringCategory.Transparency);
-    const processingLevelScore = this.getCategoryScore(result, ScoringCategory.ProcessingLevel);
-    const scientificEvidenceScore = this.getCategoryScore(result, ScoringCategory.ScientificEvidence);
-    const labelAccuracyScore = this.getCategoryScore(result, ScoringCategory.LabelTransparency);
 
     try {
-      await this.repository.saveScoreAtomically({
+      const scoreId = await this.repository.saveProductScore({
         productId: input.productId,
         overallScore: result.overallScore,
         qualityScore,
         safetyScore,
         nutritionScore,
         transparencyScore,
-        processingLevelScore,
-        scientificEvidenceScore,
-        labelAccuracyScore,
+        scoringVersion: result.version,
+      });
+
+      await this.repository.saveScoreHistory({
+        productId: input.productId,
+        overallScore: result.overallScore,
+        qualityScore,
+        safetyScore,
+        nutritionScore,
+        transparencyScore,
         scoringVersion: result.version,
         triggeredBy,
         notes: `Score: ${result.overallScore} (${result.grade}). Confidence: ${result.confidence}. Warnings: ${result.warnings.length}.`,
       });
     } catch (err) {
       this.logger.error(`Failed to persist score for ${input.productId}: ${err}`);
-      result.warnings.push({
-        category: ScoringCategory.IngredientQuality,
-        severity: 'high',
-        code: 'PERSISTENCE_FAILED',
-        message: `Score computed but failed to persist: ${err instanceof Error ? err.message : 'Unknown error'}`,
-      } as ScoringWarning);
     }
 
     return result;
