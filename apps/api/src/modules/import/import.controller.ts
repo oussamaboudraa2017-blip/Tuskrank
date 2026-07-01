@@ -15,7 +15,21 @@ import { ImportService } from './import.service';
 import { ImportEntityType, ImportFormat, DedupeStrategy } from './enums';
 import { Roles } from '@common/decorators';
 import { okResponse } from '@common/dto';
-import type { Express } from 'express';
+
+/**
+ * Multer file type — avoids depending on @types/multer at compile time.
+ */
+interface UploadedFile {
+  fieldname: string;
+  originalname: string;
+  encoding: string;
+  mimetype: string;
+  size: number;
+  destination?: string;
+  filename?: string;
+  path?: string;
+  buffer: Buffer;
+}
 
 /**
  * Import controller — REST surface for data import.
@@ -97,7 +111,7 @@ export class ImportController {
     },
   })
   async upload(
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile() file: UploadedFile,
     @Body('entityType') entityType: ImportEntityType,
     @Body('dedupeStrategy') dedupeStrategy?: DedupeStrategy,
   ) {
