@@ -1,27 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-/**
- * Accepts any object with product-like fields.
- * Both domain ProductEntity and DB ProductEntity satisfy this.
- */
-interface ProductLike {
-  readonly id: string;
-  readonly brandId: string;
-  readonly brand?: { name?: string } | null | undefined;
-  readonly name: string;
-  readonly slug: string;
-  readonly description?: string | null;
-  readonly upc?: string | null;
-  readonly sku?: string | null;
-  readonly packageSizeGrams?: number | string | null;
-  readonly packageSizeLabel?: string | null;
-  readonly isActive: boolean;
-  readonly publishedAt?: Date | string | null;
-  readonly createdAt: Date | string;
-  readonly updatedAt: Date | string;
-  readonly deletedAt?: Date | string | null;
-}
-
 export class ProductResponseDto {
   @ApiProperty() id!: string;
   @ApiProperty() brandId!: string;
@@ -41,13 +19,14 @@ export class ProductResponseDto {
   @ApiPropertyOptional() overallScore?: number;
   @ApiPropertyOptional() grade?: string;
 
-  static fromDomain(domain: ProductLike & { brandName?: string; overallScore?: number; grade?: string }): ProductResponseDto {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  static fromDomain(domain: any): ProductResponseDto {
     const dto = new ProductResponseDto();
     dto.id = domain.id;
     dto.brandId = domain.brandId;
     dto.brandName = domain.brandName ?? domain.brand?.name ?? '';
     dto.name = domain.name;
-    dto.slug = domain.slug;
+    dto.slug = typeof domain.slug === 'object' ? (domain.slug as any).value : String(domain.slug);
     dto.description = domain.description ?? undefined;
     dto.upc = domain.upc ?? undefined;
     dto.sku = domain.sku ?? undefined;
@@ -58,8 +37,8 @@ export class ProductResponseDto {
     dto.createdAt = domain.createdAt instanceof Date ? domain.createdAt : new Date(domain.createdAt);
     dto.updatedAt = domain.updatedAt instanceof Date ? domain.updatedAt : new Date(domain.updatedAt);
     dto.deletedAt = domain.deletedAt ? (domain.deletedAt instanceof Date ? domain.deletedAt : new Date(domain.deletedAt)) : undefined;
-    dto.overallScore = (domain as any).overallScore;
-    dto.grade = (domain as any).grade;
+    dto.overallScore = domain.overallScore;
+    dto.grade = domain.grade;
     return dto;
   }
 }
