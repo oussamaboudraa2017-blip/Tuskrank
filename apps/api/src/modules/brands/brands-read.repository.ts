@@ -55,20 +55,21 @@ export class BrandsReadRepository extends BaseRepository {
         FROM products WHERE deleted_at IS NULL AND is_active = true
         GROUP BY brand_id
       ) pc ON pc.brand_id = b.id
-      LEFT JOIN (
+            LEFT JOIN (
         SELECT p.brand_id,
-          AVG(p.overall_score) AS avg_overall_score,
-          AVG(p.quality_score) AS avg_quality_score,
-          AVG(p.safety_score) AS avg_safety_score,
-          AVG(p.nutrition_score) AS avg_nutrition_score,
-          AVG(p.transparency_score) AS avg_transparency_score
+          AVG(sc.overall_score) AS avg_overall_score,
+          AVG(sc.quality_score) AS avg_quality_score,
+          AVG(sc.safety_score) AS avg_safety_score,
+          AVG(sc.nutrition_score) AS avg_nutrition_score,
+          AVG(sc.transparency_score) AS avg_transparency_score
         FROM products p
+        INNER JOIN product_scores sc ON sc.product_id = p.id AND sc.is_current = true AND sc.deleted_at IS NULL
         WHERE p.deleted_at IS NULL AND p.is_active = true
         GROUP BY p.brand_id
       ) ps ON ps.brand_id = b.id
       LEFT JOIN (
         SELECT brand_id, COUNT(*)::int AS open_count
-        FROM recalls WHERE deleted_at IS NULL AND status IN ('active', 'pending')
+        FROM recalls WHERE deleted_at IS NULL AND status IN ('announced', 'ongoing')
         GROUP BY brand_id
       ) rc ON rc.brand_id = b.id
     `;

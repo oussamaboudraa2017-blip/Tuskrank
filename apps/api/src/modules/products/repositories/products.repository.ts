@@ -320,13 +320,14 @@ export class ProductsReadRepository extends BaseRepository<BaseEntity> {
     if (ids.length === 0) return [];
     const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ');
     const result = await this.execute<ProductIngredientRow>(
-      `SELECT pi.*, i.slug AS ingredient_slug, i.name AS ingredient_name,
-              i.current_score AS ingredient_current_score, i.current_grade AS ingredient_current_grade,
+            `SELECT pi.*, i.slug AS ingredient_slug, i.name AS ingredient_name,
+              s.score AS ingredient_current_score, s.grade AS ingredient_current_grade,
               i.is_controversial AS ingredient_is_controversial,
               i.is_common_allergen AS ingredient_is_common_allergen,
               i.is_animal_derived AS ingredient_is_animal_derived
        FROM product_ingredients pi
        INNER JOIN ingredients i ON i.id = pi.ingredient_id
+       LEFT JOIN ingredient_scores s ON s.ingredient_id = i.id AND s.is_current AND s.deleted_at IS NULL
        WHERE pi.product_id IN (${placeholders}) AND pi.deleted_at IS NULL
        ORDER BY pi.position`,
       ids,
