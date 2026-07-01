@@ -106,6 +106,23 @@ CREATE TABLE food_forms (
 
 CREATE TYPE protein_origin AS ENUM ('animal', 'plant', 'insect', 'fungi', 'synthetic');
 
+CREATE TYPE nutrient_bound AS ENUM ('exact', 'min', 'max', 'typical');
+
+CREATE TYPE evidence_type_t AS ENUM ('supports', 'refutes', 'neutral');
+
+CREATE TYPE recall_severity AS ENUM ('low', 'moderate', 'high', 'critical');
+
+CREATE TYPE recall_status   AS ENUM ('announced', 'ongoing', 'resolved', 'withdrawn');
+
+CREATE TYPE nutrition_source AS ENUM ('label', 'lab', 'vendor', 'calculated', 'official');
+
+CREATE TYPE score_history_trigger AS ENUM ('manual', 'scheduled', 'data_change', 'import', 'seed');
+
+CREATE TYPE seo_page_kind AS ENUM ('product', 'ingredient', 'brand', 'comparison', 'editorial', 'category');
+
+CREATE TYPE actor_type_t AS ENUM ('admin', 'system', 'user', 'job', 'service');
+
+
 -- Protein sources: chicken, beef, salmon, etc.
 CREATE TABLE protein_sources (
     id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -431,7 +448,6 @@ CREATE TABLE nutrition_profiles (
 -- profiles. Uniqueness of the *currently effective* profile is enforced
 -- in indexes.sql as a partial unique index on `effective_to IS NULL`.)
 
-CREATE TYPE nutrient_bound AS ENUM ('exact', 'min', 'max', 'typical');
 
 -- Product × nutrient values
 -- amount_unit is normalized to the unit canonical to the parent nutrient.
@@ -585,7 +601,6 @@ CREATE TABLE score_history (
 -- SECTION 5 — SCIENCE / CITATIONS
 -- ============================================================
 
-CREATE TYPE evidence_type_t AS ENUM ('supports', 'refutes', 'neutral');
 
 CREATE TABLE ingredient_references (
     id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -610,10 +625,6 @@ CREATE TABLE ingredient_references (
 -- SECTION 6 — TRUST
 -- ============================================================
 
-CREATE TYPE recall_severity AS ENUM ('low', 'moderate', 'high', 'critical');
-CREATE TYPE recall_status   AS ENUM ('announced', 'ongoing', 'resolved', 'withdrawn');
-CREATE TYPE nutrition_source AS ENUM ('label', 'lab', 'vendor', 'calculated', 'official');
-CREATE TYPE score_history_trigger AS ENUM ('manual', 'scheduled', 'data_change', 'import', 'seed');
 
 CREATE TABLE recalls (
     id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -855,7 +866,6 @@ CREATE TABLE related_products (
 -- SECTION 9 — SEO
 -- ============================================================
 
-CREATE TYPE seo_page_kind AS ENUM ('product', 'ingredient', 'brand', 'comparison', 'editorial', 'category');
 
 CREATE TABLE seo_pages (
     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -915,7 +925,6 @@ CREATE TABLE faq_items (
 -- SECTION 10 — SYSTEM / AUDIT
 -- ============================================================
 
-CREATE TYPE actor_type_t AS ENUM ('admin', 'system', 'user', 'job', 'service');
 
 CREATE TABLE audit_logs (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
