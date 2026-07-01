@@ -24,6 +24,13 @@ export class SupabaseAuthGuard implements CanActivate {
         const supabaseKey = this.config.get<string>('SUPABASE_ANON_KEY');
         this.nodeEnv = this.config.get<string>('NODE_ENV', 'development');
         this.bypassInDev = this.nodeEnv === AppEnvironment.Development;
+
+        if (!supabaseUrl || !supabaseKey) {
+            throw new Error(
+                'SUPABASE_URL and SUPABASE_ANON_KEY must be set in environment variables.',
+            );
+        }
+
         this.client = createClient(supabaseUrl, supabaseKey);
     }
 
@@ -88,7 +95,7 @@ export class SupabaseAuthGuard implements CanActivate {
             id: data.user.id,
             email: data.user.email || undefined,
             role: this.getUserRole(data.user),
-            raw: data.user,
+            raw: data.user as unknown as Record<string, unknown>,
         };
 
         this.verifiedCache.set(token, user);
@@ -101,8 +108,8 @@ export class SupabaseAuthGuard implements CanActivate {
             return UserRole.Admin;
         }
         if (roleClaim === 'moderator') {
-            return UserRole.Moderator;
+            return UserRole.Authenticated;
         }
-        return UserRole.User;
+        return UserRole.Authenticated;
     }
 }
