@@ -1,8 +1,13 @@
+import { Helmet } from 'react-helmet-async';
 import MainLayout from '@/components/MainLayout';
 
 export default function PrivacyPage() {
   return (
     <MainLayout>
+      <Helmet>
+        <title>Privacy Policy — Tuskrank</title>
+        <meta name="description" content="Tuskrank privacy policy — how we collect, use and protect your data." />
+      </Helmet>
       <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:px-8">
         <div className="space-y-2 mb-10">
           <h1 className="text-4xl font-bold tracking-tight">Privacy Policy</h1>

@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Link, useSearch } from 'wouter';
+import { Link, useSearch, useLocation } from 'wouter';
 import { motion } from 'framer-motion';
 import { Search, X, Clock, ArrowRight, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { Helmet } from 'react-helmet-async';
 import MainLayout from '@/components/MainLayout';
-import { ErrorDisplay } from '@/components/ErrorDisplay';
 import { EmptyState } from '@/components/EmptyState';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,63 +12,63 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { ScoreBadge } from '@/components/ScoreBadge';
 import { useGlobalSearch } from '@/lib/queries';
+import { useDebounce } from '@/lib/hooks';
 import type { SearchResult } from '@/lib/types';
 
 type Tab = 'all' | 'products' | 'brands' | 'ingredients';
 
 export default function SearchPage() {
-  const searchString = useSearch();
-  const initialQ = new URLSearchParams(searchString).get('q') ?? '';
+  const rawSearch = useSearch();
+  const [, navigate] = useLocation();
+  const initialQ = new URLSearchParams(rawSearch).get('q') ?? '';
 
-  const [query, setQuery] = useState(initialQ);
+  const [inputValue, setInputValue] = useState(initialQ);
   const [activeTab, setActiveTab] = useState<Tab>('all');
-  const [submittedQuery, setSubmittedQuery] = useState(initialQ);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
 
-  const searchQuery = useGlobalSearch(
-    { q: submittedQuery, limit: '20' },
-    submittedQuery.trim().length > 0,
-  );
+  const debouncedQuery = useDebounce(inputValue.trim(), 350);
 
+  // Load recent searches once
   useEffect(() => {
     try {
-      const stored = localStorage.getItem('recentSearches');
+      const stored = localStorage.getItem('tuskrank:recentSearches');
       if (stored) setRecentSearches(JSON.parse(stored));
-    } catch {
-      /* ignore */
-    }
+    } catch { /* ignore */ }
   }, []);
 
   const saveSearch = useCallback((q: string) => {
+    if (!q) return;
     setRecentSearches((prev) => {
-      const next = [q, ...prev.filter((s) => s !== q)].slice(0, 5);
-      try {
-        localStorage.setItem('recentSearches', JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
+      const next = [q, ...prev.filter((s) => s !== q)].slice(0, 6);
+      try { localStorage.setItem('tuskrank:recentSearches', JSON.stringify(next)); } catch { /* ignore */ }
       return next;
     });
   }, []);
 
+  // Sync URL when debounced query changes
   useEffect(() => {
-    if (initialQ) {
-      setQuery(initialQ);
-      setSubmittedQuery(initialQ);
-      saveSearch(initialQ);
-    }
-  }, [initialQ, saveSearch]);
+    const url = debouncedQuery ? `/search?q=${encodeURIComponent(debouncedQuery)}` : '/search';
+    navigate(url, { replace: true });
+    if (debouncedQuery) saveSearch(debouncedQuery);
+  }, [debouncedQuery, navigate, saveSearch]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!query.trim()) return;
-    setSubmittedQuery(query.trim());
-    saveSearch(query.trim());
-  };
+  const searchQuery = useGlobalSearch(
+    { q: debouncedQuery, limit: '30' },
+    debouncedQuery.length > 1,
+  );
+
+  // Show toast on network error
+  useEffect(() => {
+    if (searchQuery.isError) {
+      toast.error('Search failed', {
+        description: searchQuery.error?.message ?? 'Check your connection and try again.',
+      });
+    }
+  }, [searchQuery.isError, searchQuery.error]);
 
   const clearSearch = () => {
-    setQuery('');
-    setSubmittedQuery('');
+    setInputValue('');
+    setActiveTab('all');
   };
 
   const results = searchQuery.data;
@@ -95,8 +96,19 @@ export default function SearchPage() {
     ingredients: results?.ingredients?.length ?? 0,
   };
 
+  const showResults = debouncedQuery.length > 1;
+  const isSearching = searchQuery.isFetching;
+
   return (
     <MainLayout>
+      <Helmet>
+        <title>{debouncedQuery ? `"${debouncedQuery}" — Tuskrank Search` : 'Search — Tuskrank'}</title>
+        <meta
+          name="description"
+          content="Search thousands of pet food products, brands, and ingredients with transparent scoring."
+        />
+      </Helmet>
+
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         {/* Search Header */}
         <motion.div
@@ -105,49 +117,47 @@ export default function SearchPage() {
           className="mx-auto max-w-2xl"
         >
           <h1 className="text-3xl font-bold mb-6">Search</h1>
-          <form onSubmit={handleSubmit}>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search products, brands, ingredients..."
-                className="pl-9 pr-20 h-12 text-base"
-              />
-              <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex gap-1">
-                {query && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-9 w-9"
-                    onClick={clearSearch}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                )}
-                <Button type="submit" size="sm" className="h-9">
-                  Search
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+            <Input
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              placeholder="Search products, brands, ingredients…"
+              className="pl-9 pr-20 h-12 text-base"
+              autoFocus
+            />
+            <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex gap-1 items-center">
+              {isSearching && (
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground mr-1" />
+              )}
+              {inputValue && !isSearching && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9"
+                  onClick={clearSearch}
+                  aria-label="Clear search"
+                >
+                  <X className="h-4 w-4" />
                 </Button>
-              </div>
+              )}
             </div>
-          </form>
+          </div>
 
           {/* Recent Searches */}
-          {!submittedQuery && recentSearches.length > 0 && (
+          {!debouncedQuery && recentSearches.length > 0 && (
             <div className="mt-4">
               <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
-                <Clock className="h-3 w-3" /> Recent searches
+                <Clock className="h-3 w-3" />
+                Recent searches
               </p>
               <div className="flex flex-wrap gap-2">
                 {recentSearches.map((s) => (
                   <button
                     key={s}
-                    onClick={() => {
-                      setQuery(s);
-                      setSubmittedQuery(s);
-                    }}
+                    onClick={() => setInputValue(s)}
                     className="rounded-full border bg-muted px-3 py-1 text-sm hover:bg-accent transition-colors"
                   >
                     {s}
@@ -159,7 +169,7 @@ export default function SearchPage() {
         </motion.div>
 
         {/* Results */}
-        {submittedQuery && (
+        {showResults && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -170,13 +180,7 @@ export default function SearchPage() {
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
             )}
-            {searchQuery.isError && (
-              <ErrorDisplay
-                title="Search failed"
-                message={searchQuery.error?.message ?? 'Please try again.'}
-                onRetry={() => searchQuery.refetch()}
-              />
-            )}
+
             {searchQuery.data && (
               <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)}>
                 <TabsList className="mb-6">
@@ -191,12 +195,12 @@ export default function SearchPage() {
                   {items.length === 0 ? (
                     <EmptyState
                       title="No results found"
-                      message={`No results for "${submittedQuery}". Try a different search term.`}
+                      message={`No results for "${debouncedQuery}". Try a different search term.`}
                     />
                   ) : (
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       {items.map((item, i) => (
-                        <SearchResultCard key={i} item={item} />
+                        <SearchResultCard key={`${item.entityType}-${item.slug ?? i}`} item={item} />
                       ))}
                     </div>
                   )}
@@ -204,6 +208,13 @@ export default function SearchPage() {
               </Tabs>
             )}
           </motion.div>
+        )}
+
+        {/* Empty landing state */}
+        {!showResults && !debouncedQuery && recentSearches.length === 0 && (
+          <div className="mt-16 text-center text-muted-foreground text-sm">
+            Start typing to search products, brands, and ingredients.
+          </div>
         )}
       </div>
     </MainLayout>
@@ -225,7 +236,7 @@ function SearchResultCard({ item }: { item: SearchResult }) {
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <Badge variant="secondary" className="mb-2 text-xs">
+          <Badge variant="secondary" className="mb-2 text-xs capitalize">
             {item.entityType}
           </Badge>
           <h3 className="truncate text-base font-semibold group-hover:text-primary transition-colors">
@@ -235,7 +246,9 @@ function SearchResultCard({ item }: { item: SearchResult }) {
             <p className="mt-0.5 text-sm text-muted-foreground">{item.brandName}</p>
           )}
         </div>
-        {item.overallScore !== null && <ScoreBadge score={item.overallScore} size="sm" />}
+        {item.overallScore !== null && item.overallScore !== undefined && (
+          <ScoreBadge score={item.overallScore} size="sm" />
+        )}
       </div>
       {item.snippet && (
         <p className="mt-3 line-clamp-2 text-sm text-muted-foreground leading-relaxed">

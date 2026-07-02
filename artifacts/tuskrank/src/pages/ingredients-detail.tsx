@@ -1,6 +1,7 @@
 import { Link } from 'wouter';
 import { motion } from 'framer-motion';
 import { ChevronRight, FlaskConical, BookOpen, History } from 'lucide-react';
+import { Helmet } from 'react-helmet-async';
 import MainLayout from '@/components/MainLayout';
 import { OverallScoreBadge, ScoreBadge } from '@/components/ScoreBadge';
 import { LoadingPage } from '@/components/Loading';
@@ -24,6 +25,10 @@ export default function IngredientsDetailPage({ slug }: { slug: string }) {
 
   return (
     <MainLayout>
+      <Helmet>
+        <title>{detail.data ? `${detail.data.data.name} — Tuskrank` : 'Ingredient — Tuskrank'}</title>
+        {detail.data && <meta name="description" content={`Ingredient safety score, research references and pet food usage data for ${detail.data.data.name}.`} />}
+      </Helmet>
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         {detail.isLoading && <LoadingPage />}
         {detail.isError && (

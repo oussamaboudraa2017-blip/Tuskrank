@@ -1,6 +1,7 @@
 import { Link } from 'wouter';
 import { motion } from 'framer-motion';
 import { ChevronRight, Package, Tag, FileText, AlertCircle } from 'lucide-react';
+import { Helmet } from 'react-helmet-async';
 import MainLayout from '@/components/MainLayout';
 import { OverallScoreBadge, ScoreBadge, ScoreBar } from '@/components/ScoreBadge';
 import { LoadingPage } from '@/components/Loading';
@@ -17,6 +18,10 @@ export default function ProductsDetailPage({ slug }: { slug: string }) {
 
   return (
     <MainLayout>
+      <Helmet>
+        <title>{data ? `${data.data.name} — Tuskrank` : 'Product — Tuskrank'}</title>
+        {data && <meta name="description" content={`Score and ingredient breakdown for ${data.data.name} by ${data.data.brand.name}.`} />}
+      </Helmet>
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         {isLoading && <LoadingPage />}
         {isError && (

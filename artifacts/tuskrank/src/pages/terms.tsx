@@ -1,8 +1,13 @@
+import { Helmet } from 'react-helmet-async';
 import MainLayout from '@/components/MainLayout';
 
 export default function TermsPage() {
   return (
     <MainLayout>
+      <Helmet>
+        <title>Terms of Service — Tuskrank</title>
+        <meta name="description" content="Tuskrank terms of service — your rights and responsibilities when using the platform." />
+      </Helmet>
       <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:px-8">
         <div className="space-y-2 mb-10">
           <h1 className="text-4xl font-bold tracking-tight">Terms of Service</h1>

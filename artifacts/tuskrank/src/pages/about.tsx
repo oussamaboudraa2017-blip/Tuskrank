@@ -1,8 +1,13 @@
+import { Helmet } from 'react-helmet-async';
 import MainLayout from '@/components/MainLayout';
 
 export default function AboutPage() {
   return (
     <MainLayout>
+      <Helmet>
+        <title>About — Tuskrank</title>
+        <meta name="description" content="Learn how Tuskrank scores pet food products using multi-dimensional ingredient analysis and transparent methodology." />
+      </Helmet>
       <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:px-8">
         <div className="space-y-2 mb-10">
           <h1 className="text-4xl font-bold tracking-tight">About Tuskrank</h1>

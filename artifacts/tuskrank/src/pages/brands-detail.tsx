@@ -1,6 +1,7 @@
 import { Link } from 'wouter';
 import { motion } from 'framer-motion';
 import { ChevronRight, Building2, Globe, ArrowRight } from 'lucide-react';
+import { Helmet } from 'react-helmet-async';
 import MainLayout from '@/components/MainLayout';
 import { LoadingPage } from '@/components/Loading';
 import { ErrorDisplay } from '@/components/ErrorDisplay';
@@ -20,6 +21,10 @@ export default function BrandsDetailPage({ slug }: { slug: string }) {
 
   return (
     <MainLayout>
+      <Helmet>
+        <title>{brand.data ? `${brand.data.data.name} — Tuskrank` : 'Brand — Tuskrank'}</title>
+        {brand.data && <meta name="description" content={`Browse all ${brand.data.data.name} pet food products with ingredient scoring and transparency data.`} />}
+      </Helmet>
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         {brand.isLoading && <LoadingPage />}
         {brand.isError && (
