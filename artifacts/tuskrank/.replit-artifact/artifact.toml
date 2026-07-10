@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "TuskRank — Pet Food Intelligence"
+version = "1.0.0"
+id = "artifacts/tuskrank"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 20881
+
+[services.development]
+run = "pnpm --filter @workspace/tuskrank run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/tuskrank", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/tuskrank/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "20881"
+BASE_PATH = "/"

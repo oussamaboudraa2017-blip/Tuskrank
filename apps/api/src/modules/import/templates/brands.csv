@@ -1,9 +1,0 @@
-name,manufacturer,country_code,website_url,description,logo_image_url,is_active
-Royal Canin,Royal Canin Group,FR,https://www.royalcanin.com,Global pet health nutrition company specializing in breed-specific and veterinary diet formulas.,https://example.com/logos/royal-canin.png,true
-Blue Buffalo,Buffalo Pet Products Inc,US,https://www.bluebuffalo.com,Natural pet food brand using LifeSource Bits with antioxidants vitamins and minerals.,https://example.com/logos/blue-buffalo.png,true
-Orijen,Champion Petfoods,CA,https://www.championpetfoods.com,Biologically appropriate pet food made with fresh regional ingredients in Alberta Canada.,https://example.com/logos/orijen.png,true
-Hill's Science Diet,Hill's Pet Nutrition Inc,US,https://www.hillspet.com,Science-based pet food developed by veterinarians for optimal pet health.,https://example.com/logos/hills.png,true
-Merrick, Merrick Pet Care Inc,US,https://www.merrickpetgree.com,Whole grain and grain-free pet food made with deboned meat fish and poultry.,https://example.com/logos/merrick.png,true
-Taste of the Wild,Taste of the Wild Petfoods Inc,US,https://www.tasteofthewildpetfood.com,Grain-free pet food formulas inspired by the ancestral diet of wild canines and felines.,https://example.com/logos/totw.png,true
-Wellness,WellPet LLC,US,https://www.wellnesspet.com,Natural pet food with a commitment to quality ingredients and wholesome nutrition.,https://example.com/logos/wellness.png,true
-Nutro,Nutro Products Inc,US,https://www.nutro.com,Clean recipes with non-GMO ingredients and real meat as the first ingredient.,https://example.com/logos/nutro.png,true
